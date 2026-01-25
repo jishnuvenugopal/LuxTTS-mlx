@@ -45,6 +45,7 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda', threads=2) ## change device 
 
 #### Simple inference
 ```python
+import soundfile as sf
 from IPython.display import Audio
 
 text = "Hey, what's up? I'm feeling really great if you ask me honestly!"
@@ -58,12 +59,17 @@ encoded_prompt = lux_tts.encode_prompt(prompt_audio, rms=0.01)
 ## generate speech
 final_wav = lux_tts.generate_speech(text, encoded_prompt, num_steps=num_steps)
 
+## save audio
+final_wav = final_wav.numpy().squeeze()
+sf.write('output.wav', audio_data, 48000)
+
 ## display speech
 display(Audio(final_wav, rate=48000))
 ```
 
 #### Inference with sampling params:
 ```python
+import soundfile as sf
 from IPython.display import Audio
 
 text = "Hey, what's up? I'm feeling really great if you ask me honestly!"
@@ -82,6 +88,10 @@ encoded_prompt = lux_tts.encode_prompt(prompt_audio, rms=rms)
 
 ## generate speech
 final_wav = lux_tts.generate_speech(text, encoded_prompt, num_steps=num_steps, t_shift=t_shift, speed=speed, return_smooth=return_smooth)
+
+## save audio
+final_wav = final_wav.numpy().squeeze()
+sf.write('output.wav', audio_data, 48000)
 
 ## display speech
 display(Audio(final_wav, rate=48000))
