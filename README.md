@@ -48,10 +48,12 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda', threads=2) ## change device 
 from IPython.display import Audio
 
 text = "Hey, what's up? I'm feeling really great if you ask me honestly!"
+
+## change this to your reference file path, can be wav/mp3
 prompt_audio = 'audio_file.wav'
 
 ## encode audio(takes 10s to init because of librosa first time)
-encoded_prompt = lux_tts.encode_prompt(prompt_audio, rms=rms)
+encoded_prompt = lux_tts.encode_prompt(prompt_audio, rms=0.01)
 
 ## generate speech
 final_wav = lux_tts.generate_speech(text, encoded_prompt, num_steps=num_steps)
@@ -65,6 +67,8 @@ display(Audio(final_wav, rate=48000))
 from IPython.display import Audio
 
 text = "Hey, what's up? I'm feeling really great if you ask me honestly!"
+
+## change this to your reference file path, can be wav/mp3
 prompt_audio = 'audio_file.wav'
 
 rms = 0.01 ## higher makes it sound louder(0.01 or so recommended)
