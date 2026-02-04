@@ -1,11 +1,11 @@
 import argparse
+import logging
 import os
 import sys
+import warnings
 
 import numpy as np
 import soundfile as sf
-
-from luxtts_mlx import LuxTTS
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -84,12 +84,41 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Return smoother 24k output (uses secondary head).",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging and warnings.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+
+    if not args.verbose:
+        os.environ.setdefault("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "1")
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        warnings.filterwarnings(
+            "ignore",
+            message="PySoundFile failed.*",
+            module="librosa",
+        )
+        logging.getLogger().setLevel(logging.ERROR)
+        try:
+            from transformers.utils import logging as hf_logging
+        except Exception:
+            hf_logging = None
+        if hf_logging is not None:
+            hf_logging.set_verbosity_error()
+        try:
+            from huggingface_hub.utils import logging as hf_hub_logging
+        except Exception:
+            hf_hub_logging = None
+        if hf_hub_logging is not None:
+            hf_hub_logging.set_verbosity_error()
+
+    from luxtts_mlx import LuxTTS
 
     prompt_path = os.path.expanduser(args.prompt)
     out_path = os.path.expanduser(args.out)

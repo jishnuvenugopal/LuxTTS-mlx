@@ -1,6 +1,5 @@
+import os
 import torch
-from zipvoice.modeling_utils import process_audio, generate, load_models_gpu, load_models_cpu
-from zipvoice.onnx_modeling import generate_cpu
 
 class LuxTTS:
     """
@@ -13,7 +12,12 @@ class LuxTTS:
 
         if device == 'mlx':
             try:
-                from zipvoice.mlx.modeling_utils import generate_mlx, load_models_mlx
+                os.environ.setdefault("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "1")
+                from zipvoice.mlx.modeling_utils import (
+                    generate_mlx,
+                    load_models_mlx,
+                    process_audio_mlx,
+                )
             except Exception as ex:
                 raise ImportError("MLX backend not available. Install mlx and dependencies.") from ex
             model, feature_extractor, vocos, tokenizer, transcriber = load_models_mlx(model_path)
@@ -27,7 +31,15 @@ class LuxTTS:
             self.device = device
             self.vocos.freq_range = 12000
             self._generate_mlx = generate_mlx
+            self._process_audio = process_audio_mlx
             return
+
+        from zipvoice.modeling_utils import (
+            process_audio,
+            generate,
+            load_models_gpu,
+            load_models_cpu,
+        )
 
         # Auto-detect better device if cuda is requested but not available
         if device == 'cuda' and not torch.cuda.is_available():
@@ -39,6 +51,7 @@ class LuxTTS:
                 device = 'cpu'
 
         if device == 'cpu':
+            from zipvoice.onnx_modeling import generate_cpu
             model, feature_extractor, vocos, tokenizer, transcriber = load_models_cpu(model_path, threads)
             print("Loading model on CPU")
         else:
@@ -51,6 +64,7 @@ class LuxTTS:
         self.tokenizer = tokenizer
         self.transcriber = transcriber
         self.device = device
+        self._process_audio = process_audio
         if hasattr(self.vocos, "freq_range"):
             self.vocos.freq_range = 12000
 
@@ -59,7 +73,7 @@ class LuxTTS:
     def encode_prompt(self, prompt_audio, duration=5, rms=0.001):
         """encodes audio prompt according to duration and rms(volume control)"""
         device = "cpu" if self.device == "mlx" else self.device
-        prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = process_audio(
+        prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = self._process_audio(
             prompt_audio,
             self.transcriber,
             self.tokenizer,

@@ -3,6 +3,7 @@ from typing import Optional
 
 import numpy as np
 
+import librosa
 import mlx.core as mx
 
 import torch
@@ -10,6 +11,7 @@ from transformers import pipeline
 from huggingface_hub import snapshot_download
 from zipvoice.tokenizer.tokenizer import EmiliaTokenizer
 from zipvoice.utils.feature import VocosFbank
+from zipvoice.utils.infer import rms_norm
 
 from .model import ZipVoiceDistillMLX
 from .weights import apply_state_dict_mlx
@@ -58,6 +60,32 @@ def load_models_mlx(model_path: Optional[str] = None, device: str = "cpu"):
     vocos = load_vocoder_mlx(model_path)
 
     return model, feature_extractor, vocos, tokenizer, transcriber
+
+
+@torch.inference_mode
+def process_audio_mlx(
+    audio,
+    transcriber,
+    tokenizer,
+    feature_extractor,
+    device,
+    target_rms=0.1,
+    duration=4,
+    feat_scale=0.1,
+):
+    prompt_wav, _sr = librosa.load(audio, sr=24000, duration=duration)
+    prompt_wav2, _sr2 = librosa.load(audio, sr=16000, duration=duration)
+    prompt_text = transcriber(prompt_wav2)["text"]
+    print(prompt_text)
+
+    prompt_wav = torch.from_numpy(prompt_wav).unsqueeze(0)
+    prompt_wav, prompt_rms = rms_norm(prompt_wav, target_rms)
+
+    prompt_features = feature_extractor.extract(prompt_wav, sampling_rate=24000).to(device)
+    prompt_features = prompt_features.unsqueeze(0) * feat_scale
+    prompt_features_lens = torch.tensor([prompt_features.size(1)], device=device)
+    prompt_tokens = tokenizer.texts_to_token_ids([prompt_text])
+    return prompt_tokens, prompt_features_lens, prompt_features, prompt_rms
 
 
 def _to_numpy(x):

@@ -17,18 +17,29 @@
 
 
 import logging
+import os
 import math
 import random
 import sys
 from typing import Optional, Tuple, Union
 
+def _suppress_optional_warnings() -> bool:
+    return os.environ.get("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 try:
     import k2
 except Exception as e:
-    logging.warning(
-        f"Failed import k2 with error {e}. Swoosh functions will fallback to PyTorch"
-        f" implementation, leading to slower speed and higher memory consumption."
-    )
+    if not _suppress_optional_warnings():
+        logging.warning(
+            f"Failed import k2 with error {e}. Swoosh functions will fallback to PyTorch"
+            f" implementation, leading to slower speed and higher memory consumption."
+        )
 import torch
 import torch.nn as nn
 from torch import Tensor

@@ -17,6 +17,7 @@
 # limitations under the License.
 
 import logging
+import os
 import re
 from abc import ABC, abstractmethod
 from functools import reduce
@@ -29,21 +30,30 @@ from pypinyin.contrib.tone_convert import to_finals_tone3, to_initials
 
 from zipvoice.tokenizer.normalizer import ChineseTextNormalizer, EnglishTextNormalizer
 
-try:
-    from piper_phonemize import phonemize_espeak
-except Exception as ex:  # pragma: no cover - optional dependency
-    logging.warning(
-        "piper_phonemize is not installed; phonemization will be unavailable. "
-        "Install with: pip install piper_phonemize -f "
-        "https://k2-fsa.github.io/icefall/piper_phonemize.html"
-    )
+_PHONEMIZER = None
+_PHONEMIZER_ERROR = None
+_PHONEMIZER_WARNED = False
 
-    def phonemize_espeak(*_args, **_kwargs):
-        raise RuntimeError(
-            f"{ex}\nPlease run\n"
-            "pip install piper_phonemize -f "
-            "https://k2-fsa.github.io/icefall/piper_phonemize.html"
-        )
+
+def _suppress_optional_warnings() -> bool:
+    return os.environ.get("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _get_phonemizer():
+    global _PHONEMIZER, _PHONEMIZER_ERROR
+    if _PHONEMIZER is None and _PHONEMIZER_ERROR is None:
+        try:
+            from piper_phonemize import phonemize_espeak as _phonemize_espeak
+        except Exception as ex:  # pragma: no cover - optional dependency
+            _PHONEMIZER_ERROR = ex
+        else:
+            _PHONEMIZER = _phonemize_espeak
+    return _PHONEMIZER, _PHONEMIZER_ERROR
 
 jieba.default_logger.setLevel(logging.INFO)
 
@@ -164,7 +174,18 @@ class EspeakTokenizer(Tokenizer):
 
     def g2p(self, text: str) -> List[str]:
         try:
-            tokens = phonemize_espeak(text, self.lang)
+            phonemizer, err = _get_phonemizer()
+            if err is not None:
+                global _PHONEMIZER_WARNED
+                if not _PHONEMIZER_WARNED and not _suppress_optional_warnings():
+                    logging.warning(
+                        "piper_phonemize is not installed; phonemization will be unavailable. "
+                        "Install with: pip install piper_phonemize -f "
+                        "https://k2-fsa.github.io/icefall/piper_phonemize.html"
+                    )
+                    _PHONEMIZER_WARNED = True
+                return []
+            tokens = phonemizer(text, self.lang)
             tokens = reduce(lambda x, y: x + y, tokens)
             return tokens
         except Exception as ex:
