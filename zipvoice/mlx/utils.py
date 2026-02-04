@@ -17,8 +17,9 @@ def prepare_avg_tokens_durations(features_lens, tokens_lens):
     durations = []
     for i in range(len(features_lens)):
         utt_duration = int(features_lens[i])
-        avg_token_duration = max(int(utt_duration // tokens_lens[i]), 1)
-        durations.append([avg_token_duration] * int(tokens_lens[i]))
+        tok_len = max(int(tokens_lens[i]), 1)
+        avg_token_duration = max(int(utt_duration // tok_len), 1)
+        durations.append([avg_token_duration] * tok_len)
     return durations
 
 

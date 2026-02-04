@@ -149,6 +149,9 @@ class ZipVoiceMLX(nn.Module):
         cat_tokens = [prompt_token + token for prompt_token, token in zip(prompt_tokens, tokens)]
         prompt_tokens_lens = mx.array([len(token) for token in prompt_tokens], dtype=mx.int64)
         tokens_lens = mx.array([len(token) for token in tokens], dtype=mx.int64)
+        one = mx.ones_like(prompt_tokens_lens)
+        prompt_tokens_lens = mx.maximum(prompt_tokens_lens, one)
+        tokens_lens = mx.maximum(tokens_lens, one)
 
         cat_embed, cat_tokens_lens = self.forward_text_embed(cat_tokens)
         features_lens = prompt_features_lens + mx.ceil(

@@ -55,6 +55,12 @@ def _get_phonemizer():
             _PHONEMIZER = _phonemize_espeak
     return _PHONEMIZER, _PHONEMIZER_ERROR
 
+
+def _ensure_non_empty_ids(token_ids: List[int], pad_id: int) -> List[int]:
+    if token_ids:
+        return token_ids
+    return [pad_id]
+
 jieba.default_logger.setLevel(logging.INFO)
 
 
@@ -136,7 +142,7 @@ class SimpleTokenizer(Tokenizer):
                     continue
                 token_ids.append(self.token2id[t])
 
-            token_ids_list.append(token_ids)
+            token_ids_list.append(_ensure_non_empty_ids(token_ids, self.pad_id))
 
         return token_ids_list
 
@@ -221,7 +227,7 @@ class EspeakTokenizer(Tokenizer):
                     continue
                 token_ids.append(self.token2id[t])
 
-            token_ids_list.append(token_ids)
+            token_ids_list.append(_ensure_non_empty_ids(token_ids, self.pad_id))
 
         return token_ids_list
 
@@ -319,7 +325,7 @@ class EmiliaTokenizer(Tokenizer):
                     continue
                 token_ids.append(self.token2id[t])
 
-            token_ids_list.append(token_ids)
+            token_ids_list.append(_ensure_non_empty_ids(token_ids, self.pad_id))
 
         return token_ids_list
 
@@ -594,9 +600,11 @@ class LibriTTSTokenizer(Tokenizer):
         if self.type == "bpe":
             for i in range(len(texts)):
                 texts[i] = self.normalize(texts[i])
-            return self.sp.encode(texts)
-        else:
-            return self.tokens_to_token_ids(self.texts_to_tokens(texts))
+            ids_list = self.sp.encode(texts)
+            return [
+                _ensure_non_empty_ids(list(ids), self.pad_id) for ids in ids_list
+            ]
+        return self.tokens_to_token_ids(self.texts_to_tokens(texts))
 
     def texts_to_tokens(
         self,
@@ -634,7 +642,7 @@ class LibriTTSTokenizer(Tokenizer):
                     continue
                 token_ids.append(self.token2id[t])
 
-            token_ids_list.append(token_ids)
+            token_ids_list.append(_ensure_non_empty_ids(token_ids, self.pad_id))
 
         return token_ids_list
 
