@@ -27,6 +27,9 @@ dependencies = [
   "vocos-mlx",
 ]
 
+[project.scripts]
+luxtts-mlx = "luxtts_mlx.cli:main"
+
 [project.optional-dependencies]
 train = [
   "einops",
