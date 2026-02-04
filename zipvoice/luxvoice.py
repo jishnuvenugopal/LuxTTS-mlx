@@ -11,6 +11,24 @@ class LuxTTS:
         if model_path == 'YatharthS/LuxTTS':
             model_path = None
 
+        if device == 'mlx':
+            try:
+                from zipvoice.mlx.modeling_utils import generate_mlx, load_models_mlx
+            except Exception as ex:
+                raise ImportError("MLX backend not available. Install mlx and dependencies.") from ex
+            model, feature_extractor, vocos, tokenizer, transcriber = load_models_mlx(model_path)
+            print("Loading model on MLX")
+
+            self.model = model
+            self.feature_extractor = feature_extractor
+            self.vocos = vocos
+            self.tokenizer = tokenizer
+            self.transcriber = transcriber
+            self.device = device
+            self.vocos.freq_range = 12000
+            self._generate_mlx = generate_mlx
+            return
+
         # Auto-detect better device if cuda is requested but not available
         if device == 'cuda' and not torch.cuda.is_available():
             if torch.backends.mps.is_available():
@@ -39,8 +57,25 @@ class LuxTTS:
 
     def encode_prompt(self, prompt_audio, duration=5, rms=0.001):
         """encodes audio prompt according to duration and rms(volume control)"""
-        prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = process_audio(prompt_audio, self.transcriber, self.tokenizer, self.feature_extractor, self.device, target_rms=rms, duration=duration)
-        encode_dict = {"prompt_tokens": prompt_tokens, 'prompt_features_lens': prompt_features_lens, 'prompt_features': prompt_features, 'prompt_rms': prompt_rms}
+        device = "cpu" if self.device == "mlx" else self.device
+        prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = process_audio(
+            prompt_audio,
+            self.transcriber,
+            self.tokenizer,
+            self.feature_extractor,
+            device,
+            target_rms=rms,
+            duration=duration,
+        )
+        if self.device == "mlx":
+            encode_dict = {
+                "prompt_tokens": prompt_tokens,
+                "prompt_features_lens": prompt_features_lens.cpu().numpy(),
+                "prompt_features": prompt_features.cpu().numpy(),
+                "prompt_rms": float(prompt_rms),
+            }
+        else:
+            encode_dict = {"prompt_tokens": prompt_tokens, 'prompt_features_lens': prompt_features_lens, 'prompt_features': prompt_features, 'prompt_rms': prompt_rms}
 
         return encode_dict
 
@@ -54,9 +89,11 @@ class LuxTTS:
         else:
             self.vocos.return_48k = True
 
-        if self.device == 'cpu':
+        if self.device == 'mlx':
+            final_wav = self._generate_mlx(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
+        elif self.device == 'cpu':
             final_wav = generate_cpu(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
         else:
             final_wav = generate(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
 
-        return final_wav.cpu()
+        return final_wav if self.device == 'mlx' else final_wav.cpu()

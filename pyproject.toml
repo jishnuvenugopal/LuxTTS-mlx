@@ -1,9 +1,9 @@
 [project]
-name = "Zipvoice"
-version = "0.0.11"
-description = "Linacodec is a highly compressive and rapid audio tokenizer for audio models."
+name = "LuxTTS-mlx"
+version = "0.1.0"
+description = "LuxTTS MLX port for fast Apple Silicon inference."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "cn2an",
   "huggingface-hub",
@@ -11,10 +11,10 @@ dependencies = [
   "jieba",
   "lhotse",
   "librosa",
-  "linacodec",
+  "linacodec @ git+https://github.com/ysharma3501/LinaCodec.git",
+  "mlx",
   "numpy",
   "onnxruntime",
-  "piper-phonemize",
   "pydub",
   "pypinyin",
   "safetensors",
@@ -29,6 +29,9 @@ dependencies = [
 [project.optional-dependencies]
 train = [
   "einops",
+]
+phonemize = [
+  "piper_phonemize",
 ]
 
 [build-system]

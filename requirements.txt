@@ -2,6 +2,7 @@
 
 torch
 torchaudio
+mlx
 numpy
 lhotse
 huggingface_hub

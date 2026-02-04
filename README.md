@@ -32,14 +32,19 @@ You can try it locally, colab, or spaces.
 
 #### Simple installation:
 ```
-git clone https://github.com/ysharma3501/LuxTTS.git
-cd LuxTTS
+pip install LuxTTS-mlx
+```
+
+#### From source:
+```
+git clone https://github.com/jishnuvenugopal/LuxTTS-mlx.git
+cd LuxTTS-mlx
 pip install -r requirements.txt
 ```
 
 #### Load model:
 ```python
-from zipvoice.luxvoice import LuxTTS
+from luxtts_mlx import LuxTTS
 
 # load model on GPU
 lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda')
@@ -49,7 +54,15 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda')
 
 # load model on MPS for macs
 # lux_tts = LuxTTS('YatharthS/LuxTTS', device='mps')
+
+# load model on MLX (Apple Silicon, Python 3.11+)
+# lux_tts = LuxTTS('YatharthS/LuxTTS', device='mlx')
 ```
+
+> Note: When using MLX, the diffusion model runs on MLX but the vocoder currently uses PyTorch. `final_wav` is a `mlx.core.array`; convert with `np.array(final_wav)` before saving.
+
+> Optional: For full phonemization support, install `piper_phonemize`:
+> `pip install piper_phonemize -f https://k2-fsa.github.io/icefall/piper_phonemize.html`
 
 #### Simple inference
 ```python
