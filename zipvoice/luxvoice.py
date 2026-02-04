@@ -6,7 +6,14 @@ class LuxTTS:
     LuxTTS class for encoding prompt and generating speech on cpu/cuda/mps.
     """
 
-    def __init__(self, model_path='YatharthS/LuxTTS', device='cuda', threads=4):
+    def __init__(
+        self,
+        model_path='YatharthS/LuxTTS',
+        device='cuda',
+        threads=4,
+        vocoder_backend='mlx',
+        vocoder_device=None,
+    ):
         if model_path == 'YatharthS/LuxTTS':
             model_path = None
 
@@ -20,7 +27,11 @@ class LuxTTS:
                 )
             except Exception as ex:
                 raise ImportError("MLX backend not available. Install mlx and dependencies.") from ex
-            model, feature_extractor, vocos, tokenizer, transcriber = load_models_mlx(model_path)
+            model, feature_extractor, vocos, tokenizer, transcriber = load_models_mlx(
+                model_path,
+                vocoder_backend=vocoder_backend,
+                vocoder_device=vocoder_device,
+            )
             print("Loading model on MLX")
 
             self.model = model

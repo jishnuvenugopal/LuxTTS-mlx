@@ -44,6 +44,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Device: mlx/cpu/cuda/mps (default: mlx).",
     )
     parser.add_argument(
+        "--vocoder",
+        default="mlx",
+        choices=["mlx", "torch"],
+        help="Vocoder backend when device=mlx (default: mlx).",
+    )
+    parser.add_argument(
+        "--vocoder-device",
+        default=None,
+        help="Torch vocoder device when --vocoder torch (default: mps if available, else cpu).",
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         default=4,
@@ -151,7 +162,13 @@ def main(argv: list[str] | None = None) -> int:
     if prompt_path is None and not prompt_text:
         prompt_text = text
 
-    lux = LuxTTS(args.model, device=args.device, threads=args.threads)
+    lux = LuxTTS(
+        args.model,
+        device=args.device,
+        threads=args.threads,
+        vocoder_backend=args.vocoder,
+        vocoder_device=args.vocoder_device,
+    )
     if prompt_path is None:
         print("No prompt audio provided; using a synthetic prompt for a quick smoke test.")
     encoded = lux.encode_prompt(

@@ -13,6 +13,9 @@ from zipvoice.tokenizer.tokenizer import EmiliaTokenizer
 from zipvoice.utils.feature import VocosFbank
 from zipvoice.utils.infer import rms_norm
 
+from torch.nn.utils import parametrize
+from linacodec.vocoder.vocos import Vocos
+
 def _synth_prompt(duration: float, sample_rate: int) -> np.ndarray:
     length = max(1, int(duration * sample_rate))
     t = np.linspace(0.0, duration, length, endpoint=False, dtype=np.float32)
@@ -31,7 +34,23 @@ def _load_torch_state_dict(model_ckpt: str):
     return state_dict
 
 
-def load_models_mlx(model_path: Optional[str] = None, device: str = "cpu"):
+def load_vocoder_torch(model_path: str, device: str = "cpu"):
+    vocos = Vocos.from_hparams(f"{model_path}/vocoder/config.yaml").to(device).eval()
+    for layer in getattr(vocos.upsampler, "upsample_layers", []):
+        try:
+            parametrize.remove_parametrizations(layer, "weight")
+        except ValueError:
+            continue
+    vocos.load_state_dict(torch.load(f"{model_path}/vocoder/vocos.bin", map_location=device))
+    return vocos
+
+
+def load_models_mlx(
+    model_path: Optional[str] = None,
+    device: str = "cpu",
+    vocoder_backend: str = "mlx",
+    vocoder_device: Optional[str] = None,
+):
     if model_path is None:
         model_path = snapshot_download("YatharthS/LuxTTS")
 
@@ -62,7 +81,12 @@ def load_models_mlx(model_path: Optional[str] = None, device: str = "cpu"):
     apply_state_dict_mlx(model, state_dict)
 
     feature_extractor = VocosFbank()
-    vocos = load_vocoder_mlx(model_path)
+    if vocoder_backend == "torch":
+        if vocoder_device is None:
+            vocoder_device = "mps" if torch.backends.mps.is_available() else "cpu"
+        vocos = load_vocoder_torch(model_path, device=vocoder_device)
+    else:
+        vocos = load_vocoder_mlx(model_path)
 
     return model, feature_extractor, vocos, tokenizer, transcriber
 

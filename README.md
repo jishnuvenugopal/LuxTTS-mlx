@@ -138,6 +138,11 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wa
 luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "Hello." --out output.wav --device mlx
 ```
 
+#### Debug: use torch vocoder with MLX diffusion
+```
+luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder torch
+```
+
   
 ## Info
 
