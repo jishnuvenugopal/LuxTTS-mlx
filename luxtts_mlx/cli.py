@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -90,8 +91,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
+    prompt_path = os.path.expanduser(args.prompt)
+    out_path = os.path.expanduser(args.out)
+
+    if not os.path.isfile(prompt_path):
+        print(f"Error: prompt audio not found: {prompt_path}", file=sys.stderr)
+        print("Pass a valid path, e.g. --prompt /full/path/to/prompt.wav", file=sys.stderr)
+        return 2
+
+    out_dir = os.path.dirname(out_path)
+    if out_dir and not os.path.isdir(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+
     lux = LuxTTS(args.model, device=args.device, threads=args.threads)
-    encoded = lux.encode_prompt(args.prompt, duration=args.ref_duration, rms=args.rms)
+    encoded = lux.encode_prompt(prompt_path, duration=args.ref_duration, rms=args.rms)
     wav = lux.generate_speech(
         args.text,
         encoded,
@@ -101,8 +114,8 @@ def main(argv: list[str] | None = None) -> int:
         speed=args.speed,
         return_smooth=args.return_smooth,
     )
-    sf.write(args.out, np.array(wav).squeeze(), 48000)
-    print(f"Wrote {args.out}")
+    sf.write(out_path, np.array(wav).squeeze(), 48000)
+    print(f"Wrote {out_path}")
     return 0
 
 
