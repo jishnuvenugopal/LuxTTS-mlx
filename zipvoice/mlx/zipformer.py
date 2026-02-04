@@ -52,13 +52,13 @@ class ModuleList(nn.Module):
 
     def __iter__(self):
         for i in range(self._length):
-            yield self[str(i)]
+            yield dict.__getitem__(self, str(i))
 
     def __len__(self):
         return self._length
 
     def __getitem__(self, idx):
-        return self[str(idx)]
+        return dict.__getitem__(self, str(idx))
 
 
 class Sequential(nn.Module):
@@ -70,11 +70,11 @@ class Sequential(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         for i in range(self._length):
-            x = self[str(i)](x)
+            x = dict.__getitem__(self, str(i))(x)
         return x
 
     def __getitem__(self, idx):
-        return self[str(idx)]
+        return dict.__getitem__(self, str(idx))
 
     def __len__(self):
         return self._length
