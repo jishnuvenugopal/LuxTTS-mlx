@@ -13,8 +13,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Generate speech with LuxTTS (MLX port).",
     )
     parser.add_argument(
+        "text",
+        nargs="?",
+        help="Text to synthesize (positional).",
+    )
+    parser.add_argument(
         "--text",
-        required=True,
+        dest="text_arg",
+        default=None,
         help="Text to synthesize.",
     )
     parser.add_argument(
@@ -101,6 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
+    text = args.text_arg or args.text
+    if not text:
+        print("Error: text is required (pass it positionally or with --text).", file=sys.stderr)
+        return 2
     if not args.verbose:
         os.environ.setdefault("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "1")
         warnings.filterwarnings("ignore", category=FutureWarning)
@@ -139,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
 
     prompt_text = args.prompt_text
     if prompt_path is None and not prompt_text:
-        prompt_text = args.text
+        prompt_text = text
 
     lux = LuxTTS(args.model, device=args.device, threads=args.threads)
     if prompt_path is None:
@@ -151,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         prompt_text=prompt_text,
     )
     wav = lux.generate_speech(
-        args.text,
+        text,
         encoded,
         num_steps=args.num_steps,
         guidance_scale=args.guidance_scale,

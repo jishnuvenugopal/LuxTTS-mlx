@@ -129,7 +129,7 @@ if display is not None:
 
 #### CLI quick test (no prompt)
 ```
-luxtts-mlx --text "Hello from MLX!" --out output.wav --device mlx
+luxtts-mlx "Hello from MLX!" --out output.wav --device mlx
 ```
 
 #### CLI with prompt + optional prompt text
