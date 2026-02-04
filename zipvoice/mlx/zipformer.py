@@ -154,7 +154,9 @@ class CompactRelPositionalEncoding(nn.Module):
         cosines = mx.cos(x_atan * freqs)
         sines = mx.sin(x_atan * freqs)
 
-        pe = mx.concatenate([cosines, sines], axis=1)
+        # Interleave cos/sin to match torch implementation, then set last column to 1.
+        pe = mx.stack([cosines, sines], axis=-1)
+        pe = mx.reshape(pe, (pe.shape[0], -1))
         pe = mx.concatenate(
             [pe[:, :-1], mx.ones((pe.shape[0], 1), dtype=pe.dtype)], axis=1
         )
