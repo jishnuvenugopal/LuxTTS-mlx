@@ -59,7 +59,9 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda')
 # lux_tts = LuxTTS('YatharthS/LuxTTS', device='mlx')
 ```
 
-> Note: When using MLX, the diffusion model runs on MLX but the vocoder currently uses PyTorch. `final_wav` is a `mlx.core.array`; convert with `np.array(final_wav)` before saving.
+> Note: On MLX, both the diffusion model and vocoder run in MLX using the LuxTTS vocoder weights. `final_wav` is a `mlx.core.array`; convert with `np.array(final_wav)` before saving.
+
+> Note: The MLX vocoder uses `vocos-mlx` and will download the LuxTTS vocoder weights on first run.
 
 > Optional: For full phonemization support, install `piper_phonemize`:
 > `pip install piper_phonemize -f https://k2-fsa.github.io/icefall/piper_phonemize.html`

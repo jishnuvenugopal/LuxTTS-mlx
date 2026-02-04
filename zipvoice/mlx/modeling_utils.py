@@ -1,6 +1,5 @@
 import json
-from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -9,13 +8,12 @@ import mlx.core as mx
 import torch
 from transformers import pipeline
 from huggingface_hub import snapshot_download
-from torch.nn.utils import parametrize
-
-from linacodec.vocoder.vocos import Vocos
 from zipvoice.tokenizer.tokenizer import EmiliaTokenizer
 from zipvoice.utils.feature import VocosFbank
 
 from .model import ZipVoiceDistillMLX
+from .weights import apply_state_dict_mlx
+from .vocoder import load_vocoder_mlx
 
 
 def _load_torch_state_dict(model_ckpt: str):
@@ -24,38 +22,6 @@ def _load_torch_state_dict(model_ckpt: str):
     if any(k.startswith("module.") for k in state_dict):
         state_dict = {k[len("module.") :]: v for k, v in state_dict.items()}
     return state_dict
-
-
-def _set_param(obj, name: str, value: np.ndarray):
-    parts = name.split(".")
-    cur = obj
-    for part in parts[:-1]:
-        if part.isdigit():
-            cur = cur[int(part)]
-        else:
-            cur = getattr(cur, part)
-    leaf = parts[-1]
-
-    # Conv1d weight in MLX expects (out, kernel, in)
-    if leaf == "weight" and cur.__class__.__name__ == "Conv1d":
-        if value.ndim == 3:
-            value = np.transpose(value, (0, 2, 1))
-    setattr(cur, leaf, mx.array(value))
-
-
-def apply_state_dict_mlx(model, state_dict):
-    for name, tensor in state_dict.items():
-        value = tensor.detach().cpu().numpy()
-        _set_param(model, name, value)
-
-
-def _load_vocos_torch(model_path: str, device: str = "cpu"):
-    vocos = Vocos.from_hparams(f"{model_path}/vocoder/config.yaml").eval()
-    parametrize.remove_parametrizations(vocos.upsampler.upsample_layers[0], "weight")
-    parametrize.remove_parametrizations(vocos.upsampler.upsample_layers[1], "weight")
-    vocos.load_state_dict(torch.load(f"{model_path}/vocoder/vocos.bin", map_location=device))
-    vocos = vocos.to(device)
-    return vocos
 
 
 def load_models_mlx(model_path: Optional[str] = None, device: str = "cpu"):
@@ -89,7 +55,7 @@ def load_models_mlx(model_path: Optional[str] = None, device: str = "cpu"):
     apply_state_dict_mlx(model, state_dict)
 
     feature_extractor = VocosFbank()
-    vocos = _load_vocos_torch(model_path, device=torch_device)
+    vocos = load_vocoder_mlx(model_path)
 
     return model, feature_extractor, vocos, tokenizer, transcriber
 
@@ -132,11 +98,11 @@ def generate_mlx(
         guidance_scale=guidance_scale,
     )
 
-    pred_features = mx.transpose(pred_features, (0, 2, 1)) / 0.1
+    pred_features = pred_features / 0.1
 
     if isinstance(vocoder, torch.nn.Module):
         device = next(vocoder.parameters()).device
-        pred_np = _to_numpy(pred_features)
+        pred_np = _to_numpy(mx.transpose(pred_features, (0, 2, 1)))
         pred_t = torch.from_numpy(pred_np).to(device)
         wav = vocoder.decode(pred_t).squeeze(1).clamp(-1, 1)
         wav = wav.cpu().numpy()

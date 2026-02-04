@@ -24,6 +24,7 @@ dependencies = [
   "torchaudio",
   "transformers<=4.57.6",
   "vocos",
+  "vocos-mlx",
 ]
 
 [project.optional-dependencies]

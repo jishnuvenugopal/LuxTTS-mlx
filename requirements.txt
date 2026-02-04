@@ -9,6 +9,7 @@ huggingface_hub
 safetensors
 tensorboard
 vocos
+vocos-mlx
 pydub
 onnxruntime
 git+https://github.com/ysharma3501/LinaCodec.git

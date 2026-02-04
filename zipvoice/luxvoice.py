@@ -51,7 +51,8 @@ class LuxTTS:
         self.tokenizer = tokenizer
         self.transcriber = transcriber
         self.device = device
-        self.vocos.freq_range = 12000
+        if hasattr(self.vocos, "freq_range"):
+            self.vocos.freq_range = 12000
 
 
 
@@ -84,10 +85,11 @@ class LuxTTS:
 
         prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = encode_dict.values()
 
-        if return_smooth == True:
-            self.vocos.return_48k = False
-        else:
-            self.vocos.return_48k = True
+        if hasattr(self.vocos, "return_48k"):
+            if return_smooth == True:
+                self.vocos.return_48k = False
+            else:
+                self.vocos.return_48k = True
 
         if self.device == 'mlx':
             final_wav = self._generate_mlx(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
