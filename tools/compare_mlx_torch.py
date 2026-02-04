@@ -156,7 +156,7 @@ def main():
     torch_mask = torch_pad.unsqueeze(-1)
     torch_speech = torch.where(torch_mask, torch.zeros_like(torch_speech), torch_speech)
 
-    mlx_num_frames = int(mx_text_cond.shape[1])
+    mlx_num_frames = int(mlx_text_cond.shape[1])
     prompt_features_m_np = prompt_features_m.cpu().numpy()
     mlx_speech = mx.pad(
         mx.array(prompt_features_m_np),
