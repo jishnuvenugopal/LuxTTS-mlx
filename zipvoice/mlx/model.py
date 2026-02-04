@@ -151,10 +151,9 @@ class ZipVoiceMLX(nn.Module):
         tokens_lens = mx.array([len(token) for token in tokens], dtype=mx.int64)
 
         cat_embed, cat_tokens_lens = self.forward_text_embed(cat_tokens)
-        features_lens = prompt_features_lens + mx.astype(
-            mx.ceil(prompt_features_lens / prompt_tokens_lens * tokens_lens / speed),
-            mx.int64,
-        )
+        features_lens = prompt_features_lens + mx.ceil(
+            prompt_features_lens / prompt_tokens_lens * tokens_lens / speed
+        ).astype(mx.int64)
 
         return self.forward_text_condition(cat_embed, cat_tokens_lens, features_lens)
 
@@ -203,10 +202,7 @@ class ZipVoiceMLX(nn.Module):
             speech_condition,
         )
 
-        x0 = mx.astype(
-            mx.random.normal((batch_size, num_frames, prompt_features.shape[-1])),
-            mx.float32,
-        )
+        x0 = mx.random.normal((batch_size, num_frames, prompt_features.shape[-1])).astype(mx.float32)
 
         x1 = self.solver.sample(
             x=x0,
@@ -218,7 +214,7 @@ class ZipVoiceMLX(nn.Module):
             t_shift=t_shift,
         )
 
-        x1_wo_prompt_lens = mx.astype(mx.sum(mx.logical_not(padding_mask), axis=-1), mx.int64) - prompt_features_lens
+        x1_wo_prompt_lens = mx.sum(mx.logical_not(padding_mask), axis=-1).astype(mx.int64) - prompt_features_lens
         max_wo_prompt = int(mx.max(x1_wo_prompt_lens).item())
         max_prompt = int(mx.max(prompt_features_lens).item())
 

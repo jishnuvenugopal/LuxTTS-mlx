@@ -18,7 +18,7 @@ def _linear_resample(audio: mx.array, src_sr: int, dst_sr: int) -> mx.array:
     length = audio.shape[-1]
     new_length = int(round(length * float(dst_sr) / float(src_sr)))
     pos = mx.linspace(0, length - 1, new_length)
-    idx0 = mx.astype(mx.floor(pos), mx.int64)
+    idx0 = mx.floor(pos).astype(mx.int64)
     idx1 = mx.minimum(idx0 + 1, length - 1)
     w = pos - idx0
     while w.ndim < audio.ndim:

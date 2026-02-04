@@ -248,7 +248,7 @@ def _relative_to_absolute(pos_scores: mx.array, seq_len: int) -> mx.array:
     num_heads, batch_size, time1, n = pos_scores.shape
     rows = mx.arange(time1 - 1, -1, -1)
     cols = mx.arange(seq_len)
-    idx = mx.astype(rows[:, None] + cols[None, :], mx.int64)
+    idx = (rows[:, None] + cols[None, :]).astype(mx.int64)
     idx = mx.expand_dims(idx, axis=0)
     idx = mx.broadcast_to(idx, (num_heads * batch_size, time1, seq_len))
     pos_scores_flat = mx.reshape(pos_scores, (num_heads * batch_size, time1, n))
