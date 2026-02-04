@@ -16,6 +16,8 @@ from zipvoice.tokenizer.tokenizer import EmiliaTokenizer
 from zipvoice.utils.feature import VocosFbank
 
 from zipvoice.mlx.model import ZipVoiceDistillMLX
+from zipvoice.models.modules.zipformer import timestep_embedding as torch_timestep_embedding
+from zipvoice.mlx.zipformer import timestep_embedding as mlx_timestep_embedding
 from zipvoice.mlx.modeling_utils import process_audio_mlx
 from zipvoice.mlx.weights import apply_state_dict_mlx
 from zipvoice.modeling_utils import process_audio
@@ -41,6 +43,58 @@ def _stats(name, a, b):
         f"max_abs={np.max(np.abs(diff)):.6e} "
         f"a_mean={np.mean(a_np):.6e} b_mean={np.mean(b_np):.6e}"
     )
+
+
+def _compare_encoder_stack(torch_fm, mlx_fm, x_in_np, t_val, padding_mask_np, device):
+    # Torch path
+    x_t = torch.from_numpy(x_in_np).to(device)
+    x_t = x_t.permute(1, 0, 2)
+    x_t = torch_fm.in_proj(x_t)
+
+    # MLX path
+    x_m = mx.array(x_in_np)
+    x_m = mx.transpose(x_m, (1, 0, 2))
+    x_m = mlx_fm.in_proj(x_m)
+
+    _stats("fm_in_proj", x_t, x_m)
+
+    time_emb_t = torch_timestep_embedding(
+        torch.tensor(float(t_val), dtype=torch.float32, device=device),
+        torch_fm.time_embed_dim,
+    )
+    if torch_fm.time_embed is not None:
+        time_emb_t = torch_fm.time_embed(time_emb_t)
+
+    time_emb_m = mlx_timestep_embedding(
+        mx.array(float(t_val), dtype=mx.float32),
+        mlx_fm.time_embed_dim,
+    )
+    if mlx_fm.time_embed is not None:
+        time_emb_m = mlx_fm.time_embed(time_emb_m)
+
+    _stats("fm_time_emb", time_emb_t, time_emb_m)
+
+    padding_mask_t = torch.from_numpy(padding_mask_np).to(device).bool()
+    padding_mask_m = mx.array(padding_mask_np)
+
+    for i, (enc_t, enc_m) in enumerate(zip(torch_fm.encoders, mlx_fm.encoders)):
+        x_t = enc_t(
+            x_t,
+            time_emb=time_emb_t,
+            src_key_padding_mask=padding_mask_t,
+            attn_mask=None,
+        )
+        x_m = enc_m(
+            x_m,
+            time_emb=time_emb_m,
+            src_key_padding_mask=padding_mask_m,
+            attn_mask=None,
+        )
+        _stats(f"fm_encoder_layer_{i}", x_t, x_m)
+
+    x_t_out = torch_fm.out_proj(x_t)
+    x_m_out = mlx_fm.out_proj(x_m)
+    _stats("fm_out_proj", x_t_out, x_m_out)
 
 
 def _load_torch_state_dict(model_ckpt: str):
@@ -169,10 +223,24 @@ def main():
     rng = np.random.default_rng(args.seed)
     x0_np = rng.standard_normal((1, num_frames, torch_text_cond.shape[-1])).astype(np.float32)
 
-    t_torch = torch.tensor(0.5, dtype=torch.float32)
+    torch_text_np = torch_text_cond.detach().cpu().numpy()
+    torch_speech_np = torch_speech.detach().cpu().numpy()
+    padding_mask_np = torch_pad.detach().cpu().numpy().astype(np.bool_)
+    xt_concat_np = np.concatenate([x0_np, torch_text_np, torch_speech_np], axis=2)
+
+    _compare_encoder_stack(
+        torch_model.fm_decoder,
+        mlx_model.fm_decoder,
+        xt_concat_np,
+        t_val=0.5,
+        padding_mask_np=padding_mask_np,
+        device=args.device,
+    )
+
+    t_torch = torch.tensor(0.5, dtype=torch.float32, device=args.device)
     vt_torch = torch_model.forward_fm_decoder(
         t=t_torch,
-        xt=torch.from_numpy(x0_np),
+        xt=torch.from_numpy(x0_np).to(args.device),
         text_condition=torch_text_cond,
         speech_condition=torch_speech,
         padding_mask=torch_pad,
