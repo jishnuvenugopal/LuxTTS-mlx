@@ -127,6 +127,17 @@ if display is not None:
 - You can use return_smooth = True if you hear metallic sounds.
 - Lower t_shift for less possible pronunciation errors but worse quality and vice versa.
 
+#### CLI quick test (no prompt)
+```
+luxtts-mlx --text "Hello from MLX!" --out output.wav --device mlx
+```
+
+#### CLI with prompt + optional prompt text
+```
+luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx
+luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "Hello." --out output.wav --device mlx
+```
+
   
 ## Info
 

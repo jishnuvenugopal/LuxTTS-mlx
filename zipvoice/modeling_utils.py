@@ -44,11 +44,37 @@ class LuxTTSConfig:
 
 
 @torch.inference_mode
-def process_audio(audio, transcriber, tokenizer, feature_extractor, device, target_rms=0.1, duration=4, feat_scale=0.1):
-    prompt_wav, sr = librosa.load(audio, sr=24000, duration=duration)
-    prompt_wav2, sr = librosa.load(audio, sr=16000, duration=duration)
-    prompt_text = transcriber(prompt_wav2)["text"]
-    print(prompt_text)
+def _synth_prompt(duration: float, sample_rate: int) -> np.ndarray:
+    length = max(1, int(duration * sample_rate))
+    t = np.linspace(0.0, duration, length, endpoint=False, dtype=np.float32)
+    return 0.01 * np.sin(2.0 * np.pi * 220.0 * t)
+
+
+def process_audio(
+    audio,
+    transcriber,
+    tokenizer,
+    feature_extractor,
+    device,
+    target_rms=0.1,
+    duration=4,
+    feat_scale=0.1,
+    prompt_text: Optional[str] = None,
+):
+    if audio is None:
+        prompt_wav = _synth_prompt(duration, 24000)
+        if not prompt_text:
+            prompt_text = "Hello."
+    elif isinstance(audio, np.ndarray):
+        prompt_wav = audio.astype(np.float32)
+        if not prompt_text:
+            prompt_text = "Hello."
+    else:
+        prompt_wav, sr = librosa.load(audio, sr=24000, duration=duration)
+        if not prompt_text:
+            prompt_wav2, sr = librosa.load(audio, sr=16000, duration=duration)
+            prompt_text = transcriber(prompt_wav2)["text"]
+            print(prompt_text)
 
     prompt_wav = torch.from_numpy(prompt_wav).unsqueeze(0)
     prompt_wav, prompt_rms = rms_norm(prompt_wav, target_rms)
@@ -58,6 +84,8 @@ def process_audio(audio, transcriber, tokenizer, feature_extractor, device, targ
     ).to(device)
     prompt_features = prompt_features.unsqueeze(0) * feat_scale
     prompt_features_lens = torch.tensor([prompt_features.size(1)], device=device)
+    if not prompt_text:
+        prompt_text = "Hello."
     prompt_tokens = tokenizer.texts_to_token_ids([prompt_text])
     return prompt_tokens, prompt_features_lens, prompt_features, prompt_rms
 

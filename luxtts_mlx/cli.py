@@ -19,8 +19,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--prompt",
-        required=True,
-        help="Path to prompt audio (wav/mp3).",
+        default=None,
+        help="Path to prompt audio (wav/mp3). Optional for quick tests.",
     )
     parser.add_argument(
         "--out",
@@ -80,6 +80,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Prompt duration in seconds (default: 5.0).",
     )
     parser.add_argument(
+        "--prompt-text",
+        default=None,
+        help="Override prompt transcription (skips Whisper).",
+    )
+    parser.add_argument(
         "--return-smooth",
         action="store_true",
         help="Return smoother 24k output (uses secondary head).",
@@ -120,10 +125,10 @@ def main(argv: list[str] | None = None) -> int:
 
     from luxtts_mlx import LuxTTS
 
-    prompt_path = os.path.expanduser(args.prompt)
+    prompt_path = os.path.expanduser(args.prompt) if args.prompt else None
     out_path = os.path.expanduser(args.out)
 
-    if not os.path.isfile(prompt_path):
+    if prompt_path is not None and not os.path.isfile(prompt_path):
         print(f"Error: prompt audio not found: {prompt_path}", file=sys.stderr)
         print("Pass a valid path, e.g. --prompt /full/path/to/prompt.wav", file=sys.stderr)
         return 2
@@ -132,8 +137,19 @@ def main(argv: list[str] | None = None) -> int:
     if out_dir and not os.path.isdir(out_dir):
         os.makedirs(out_dir, exist_ok=True)
 
+    prompt_text = args.prompt_text
+    if prompt_path is None and not prompt_text:
+        prompt_text = args.text
+
     lux = LuxTTS(args.model, device=args.device, threads=args.threads)
-    encoded = lux.encode_prompt(prompt_path, duration=args.ref_duration, rms=args.rms)
+    if prompt_path is None:
+        print("No prompt audio provided; using a synthetic prompt for a quick smoke test.")
+    encoded = lux.encode_prompt(
+        prompt_path,
+        duration=args.ref_duration,
+        rms=args.rms,
+        prompt_text=prompt_text,
+    )
     wav = lux.generate_speech(
         args.text,
         encoded,

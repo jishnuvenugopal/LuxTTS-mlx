@@ -70,7 +70,7 @@ class LuxTTS:
 
 
 
-    def encode_prompt(self, prompt_audio, duration=5, rms=0.001):
+    def encode_prompt(self, prompt_audio=None, duration=5, rms=0.001, prompt_text=None):
         """encodes audio prompt according to duration and rms(volume control)"""
         device = "cpu" if self.device == "mlx" else self.device
         prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = self._process_audio(
@@ -81,6 +81,7 @@ class LuxTTS:
             device,
             target_rms=rms,
             duration=duration,
+            prompt_text=prompt_text,
         )
         if self.device == "mlx":
             encode_dict = {
