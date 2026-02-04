@@ -355,7 +355,18 @@ class EmiliaTokenizer(Tokenizer):
     def tokenize_EN(self, text: str) -> List[str]:
         try:
             text = self.english_normalizer.normalize(text)
-            tokens = phonemize_espeak(text, "en-us")
+            phonemizer, err = _get_phonemizer()
+            if err is not None or phonemizer is None:
+                global _PHONEMIZER_WARNED
+                if not _PHONEMIZER_WARNED and not _suppress_optional_warnings():
+                    logging.warning(
+                        "piper_phonemize is not installed; phonemization will be unavailable. "
+                        "Install with: pip install piper_phonemize -f "
+                        "https://k2-fsa.github.io/icefall/piper_phonemize.html"
+                    )
+                    _PHONEMIZER_WARNED = True
+                return []
+            tokens = phonemizer(text, "en-us")
             tokens = reduce(lambda x, y: x + y, tokens)
             return tokens
         except Exception as ex:
@@ -616,9 +627,21 @@ class LibriTTSTokenizer(Tokenizer):
         if self.type == "char":
             tokens_list = [list(texts[i]) for i in range(len(texts))]
         elif self.type == "phone":
-            tokens_list = [
-                phonemize_espeak(texts[i].lower(), "en-us") for i in range(len(texts))
-            ]
+            phonemizer, err = _get_phonemizer()
+            if err is not None or phonemizer is None:
+                global _PHONEMIZER_WARNED
+                if not _PHONEMIZER_WARNED and not _suppress_optional_warnings():
+                    logging.warning(
+                        "piper_phonemize is not installed; phonemization will be unavailable. "
+                        "Install with: pip install piper_phonemize -f "
+                        "https://k2-fsa.github.io/icefall/piper_phonemize.html"
+                    )
+                    _PHONEMIZER_WARNED = True
+                tokens_list = [[] for _ in range(len(texts))]
+            else:
+                tokens_list = [
+                    phonemizer(texts[i].lower(), "en-us") for i in range(len(texts))
+                ]
         elif self.type == "bpe":
             tokens_list = self.sp.encode(texts, out_type=str)
 
