@@ -46,30 +46,38 @@ def timestep_embedding(timesteps: mx.array, dim: int, max_period: int = 10000) -
 class ModuleList(nn.Module):
     def __init__(self, modules):
         super().__init__()
-        self.modules = list(modules)
+        self._length = len(modules)
+        for i, module in enumerate(modules):
+            self[str(i)] = module
 
     def __iter__(self):
-        return iter(self.modules)
+        for i in range(self._length):
+            yield self[str(i)]
 
     def __len__(self):
-        return len(self.modules)
+        return self._length
 
     def __getitem__(self, idx):
-        return self.modules[idx]
+        return self[str(idx)]
 
 
 class Sequential(nn.Module):
     def __init__(self, *modules):
         super().__init__()
-        self.modules = list(modules)
+        self._length = len(modules)
+        for i, module in enumerate(modules):
+            self[str(i)] = module
 
     def __call__(self, x: mx.array) -> mx.array:
-        for module in self.modules:
-            x = module(x)
+        for i in range(self._length):
+            x = self[str(i)](x)
         return x
 
     def __getitem__(self, idx):
-        return self.modules[idx]
+        return self[str(idx)]
+
+    def __len__(self):
+        return self._length
 
 
 class BypassModule(nn.Module):
