@@ -247,15 +247,18 @@ class RelPositionMultiheadAttentionWeights(nn.Module):
 
 
 def _relative_to_absolute(pos_scores: mx.array, seq_len: int) -> mx.array:
+    # Equivalent to torch's as_strided relative shift.
     num_heads, batch_size, time1, n = pos_scores.shape
-    rows = mx.arange(time1 - 1, -1, -1)
-    cols = mx.arange(seq_len)
-    idx = (rows[:, None] + cols[None, :]).astype(mx.int64)
-    idx = mx.expand_dims(idx, axis=0)
-    idx = mx.broadcast_to(idx, (num_heads * batch_size, time1, seq_len))
-    pos_scores_flat = mx.reshape(pos_scores, (num_heads * batch_size, time1, n))
-    gathered = mx.take_along_axis(pos_scores_flat, idx, axis=2)
-    return mx.reshape(gathered, (num_heads, batch_size, time1, seq_len))
+    if n != 2 * seq_len - 1:
+        raise ValueError(f"Expected last dim {2 * seq_len - 1}, got {n}")
+    # pad on the left: (H, B, L, 2L)
+    x = mx.pad(pos_scores, ((0, 0), (0, 0), (0, 0), (1, 0)))
+    # reshape to (H, B, 2L, L)
+    x = mx.reshape(x, (num_heads, batch_size, 2 * seq_len, time1))
+    # slice and reshape back
+    x = x[:, :, 1:, :]
+    x = mx.reshape(x, (num_heads, batch_size, time1, 2 * seq_len - 1))
+    return x[:, :, :, :seq_len]
 
 
 class SelfAttention(nn.Module):
