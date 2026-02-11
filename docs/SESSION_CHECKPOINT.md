@@ -11,6 +11,7 @@
 - General English synthesis is clear.
 - Cloning works reliably for short/clean prompt clips.
 - Prompt-window controls (`--prompt-start`, `--ref-duration`) improve stability on long files.
+- Prompt preprocessing now defaults to silence-edge trimming + safe RMS clamping.
 
 ## Known Remaining Issues
 
@@ -27,6 +28,9 @@
   --prompt-start '0.8' \
   --ref-duration '2.4' \
   --prompt-fade-ms '18' \
+  --trim-prompt-silence \
+  --prompt-rms-min '0.006' \
+  --prompt-rms-max '0.03' \
   --device 'mlx' \
   --vocoder 'mlx' \
   --num-steps '6' \

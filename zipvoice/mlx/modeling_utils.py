@@ -32,6 +32,48 @@ def _apply_fade_np(wav: np.ndarray, sample_rate: int, fade_ms: float) -> np.ndar
     out[-fade_samples:] *= ramp[::-1]
     return out
 
+
+def _trim_silence_edges_np(
+    wav: np.ndarray,
+    sample_rate: int,
+    threshold_db: float,
+    keep_silence_ms: float,
+) -> np.ndarray:
+    if wav.size == 0:
+        return wav
+
+    abs_wav = np.abs(wav.astype(np.float32, copy=False))
+    peak = float(np.max(abs_wav))
+    if peak <= 1.0e-8:
+        return wav
+
+    threshold = peak * float(10.0 ** (threshold_db / 20.0))
+    active = np.flatnonzero(abs_wav > threshold)
+    if active.size == 0:
+        return wav
+
+    keep = max(0, int(sample_rate * max(keep_silence_ms, 0.0) / 1000.0))
+    start = max(0, int(active[0]) - keep)
+    end = min(wav.shape[-1], int(active[-1]) + keep + 1)
+    if end - start <= 8:
+        return wav
+    return wav[start:end]
+
+
+def _normalize_prompt_rms_np(
+    prompt_wav: np.ndarray,
+    target_rms: float,
+    rms_min: float,
+    rms_max: float,
+) -> tuple[np.ndarray, float]:
+    min_rms = max(0.0, float(rms_min))
+    max_rms = max(min_rms + 1.0e-6, float(rms_max))
+    safe_target = float(np.clip(float(target_rms), min_rms, max_rms))
+    wav, prompt_rms = _rms_norm_np(prompt_wav, safe_target)
+    if prompt_rms > max_rms and prompt_rms > 1.0e-8:
+        wav = wav * (max_rms / prompt_rms)
+    return wav, prompt_rms
+
 from .model import ZipVoiceDistillMLX
 from .weights import apply_state_dict_mlx
 from .vocoder import load_vocoder_mlx
@@ -161,6 +203,11 @@ def process_audio_mlx(
     prompt_text: Optional[str] = None,
     offset: float = 0.0,
     fade_ms: float = 12.0,
+    trim_silence: bool = True,
+    silence_threshold_db: float = -42.0,
+    keep_silence_ms: float = 35.0,
+    rms_min: float = 0.006,
+    rms_max: float = 0.03,
 ):
     if audio is None:
         prompt_wav = _synth_prompt(duration, 24000)
@@ -181,11 +228,24 @@ def process_audio_mlx(
             prompt_text = transcriber(prompt_wav2)["text"]
             print(prompt_text)
 
+    if trim_silence:
+        prompt_wav = _trim_silence_edges_np(
+            prompt_wav,
+            sample_rate=24000,
+            threshold_db=silence_threshold_db,
+            keep_silence_ms=keep_silence_ms,
+        )
+
     # Reduce click/noise at prompt boundaries and remove DC bias.
     prompt_wav = _apply_fade_np(prompt_wav, 24000, fade_ms=fade_ms)
     prompt_wav = prompt_wav - float(np.mean(prompt_wav))
 
-    prompt_wav, prompt_rms = _rms_norm_np(prompt_wav, target_rms)
+    prompt_wav, prompt_rms = _normalize_prompt_rms_np(
+        prompt_wav,
+        target_rms=target_rms,
+        rms_min=rms_min,
+        rms_max=rms_max,
+    )
     prompt_features = _extract_vocos_fbank_np(prompt_wav, sampling_rate=24000)
     prompt_features = np.expand_dims(prompt_features, axis=0) * float(feat_scale)
     prompt_features_lens = np.array([prompt_features.shape[1]], dtype=np.int64)

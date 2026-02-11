@@ -68,6 +68,7 @@ class LuxTTS:
             from zipvoice.onnx_modeling import generate_cpu
             model, feature_extractor, vocos, tokenizer, transcriber = load_models_cpu(model_path, threads)
             print("Loading model on CPU")
+            self._generate_cpu = generate_cpu
         else:
             model, feature_extractor, vocos, tokenizer, transcriber = load_models_gpu(model_path, device=device)
             print("Loading model on GPU")
@@ -90,10 +91,18 @@ class LuxTTS:
         prompt_text=None,
         offset=0.0,
         fade_ms=12.0,
+        trim_silence=True,
+        silence_threshold_db=-42.0,
+        keep_silence_ms=35.0,
+        rms_min=0.006,
+        rms_max=0.03,
     ):
         """encodes audio prompt according to duration and rms(volume control)"""
         if self.device == "mlx" and prompt_audio is not None and not prompt_text and self.transcriber is None:
             self.transcriber = self._load_transcriber()
+        min_rms = max(0.0, float(rms_min))
+        max_rms = max(min_rms + 1.0e-6, float(rms_max))
+        safe_target_rms = float(np.clip(float(rms), min_rms, max_rms))
         device = "cpu" if self.device == "mlx" else self.device
         prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = self._process_audio(
             prompt_audio,
@@ -101,11 +110,16 @@ class LuxTTS:
             self.tokenizer,
             self.feature_extractor,
             device,
-            target_rms=rms,
+            target_rms=safe_target_rms,
             duration=duration,
             prompt_text=prompt_text,
             offset=offset,
             fade_ms=fade_ms,
+            trim_silence=trim_silence,
+            silence_threshold_db=silence_threshold_db,
+            keep_silence_ms=keep_silence_ms,
+            rms_min=min_rms,
+            rms_max=max_rms,
         )
         if self.device == "mlx":
             encode_dict = {
@@ -113,7 +127,7 @@ class LuxTTS:
                 "prompt_features_lens": np.array(prompt_features_lens, dtype=np.int64),
                 "prompt_features": np.array(prompt_features, dtype=np.float32),
                 "prompt_rms": float(prompt_rms),
-                "target_rms": float(rms),
+                "target_rms": safe_target_rms,
             }
         else:
             encode_dict = {
@@ -121,7 +135,7 @@ class LuxTTS:
                 "prompt_features_lens": prompt_features_lens,
                 "prompt_features": prompt_features,
                 "prompt_rms": prompt_rms,
-                "target_rms": float(rms),
+                "target_rms": safe_target_rms,
             }
 
         return encode_dict
@@ -169,7 +183,7 @@ class LuxTTS:
                 duration_pad_frames=duration_pad_frames,
             )
         elif self.device == 'cpu':
-            final_wav = generate_cpu(
+            final_wav = self._generate_cpu(
                 prompt_tokens,
                 prompt_features_lens,
                 prompt_features,

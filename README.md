@@ -147,6 +147,7 @@ Use `--no-return-smooth` if you want the sharper 48k path.
 Defaults are tuned for clarity: `--num-steps 5`, `--speed 0.92`, `--duration-pad-frames 16`.
 Default output peak normalization is enabled: `--output-peak 0.92` (set `--output-peak 0` to disable).
 If output feels too loud on speakers/headphones, use `--output-peak 0.8`.
+Prompt preprocessing is enabled by default: silence edge trim (`--trim-prompt-silence`) and safe RMS clamping (`--prompt-rms-min 0.006`, `--prompt-rms-max 0.03`).
 
 #### CLI with prompt + optional prompt text
 ```
@@ -157,6 +158,7 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "
 Tip: providing `--prompt-text` skips Whisper prompt transcription load, which is faster and avoids extra multiprocessing warnings.
 For long/noisy prompt files, use `--prompt-start` and `--ref-duration` to target a clean segment.
 If prompt text is mis-transcribed or repeated, always pass explicit `--prompt-text`.
+If trimming is too aggressive for your clip, pass `--no-trim-prompt-silence` or lower trim sensitivity with `--prompt-silence-threshold-db -48`.
 
 #### Optional fallback: torch vocoder with MLX diffusion
 ```

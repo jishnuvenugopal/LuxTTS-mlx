@@ -40,6 +40,7 @@ From recent voice smoke tests:
 - Add optional prompt pre-processing:
   - trim leading/trailing silence
   - clamp prompt RMS into a safe range
+  - Status: implemented in CLI defaults (`--trim-prompt-silence`, `--prompt-rms-min`, `--prompt-rms-max`)
 
 ### Phase C: CLI/Product UX
 

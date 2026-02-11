@@ -160,6 +160,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Fade in/out applied to prompt audio edges in ms (default: 12.0).",
     )
     parser.add_argument(
+        "--trim-prompt-silence",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Trim leading/trailing prompt silence before feature extraction (default: true).",
+    )
+    parser.add_argument(
+        "--prompt-silence-threshold-db",
+        type=float,
+        default=-42.0,
+        help="Relative dB threshold used for prompt edge trimming (default: -42.0).",
+    )
+    parser.add_argument(
+        "--prompt-keep-silence-ms",
+        type=float,
+        default=35.0,
+        help="Silence margin to preserve around trimmed prompt speech edges (default: 35.0).",
+    )
+    parser.add_argument(
+        "--prompt-rms-min",
+        type=float,
+        default=0.006,
+        help="Minimum safe prompt RMS floor used during normalization (default: 0.006).",
+    )
+    parser.add_argument(
+        "--prompt-rms-max",
+        type=float,
+        default=0.03,
+        help="Maximum safe prompt RMS ceiling used during normalization (default: 0.03).",
+    )
+    parser.add_argument(
         "--prompt-text",
         default=None,
         help="Override prompt transcription (skips Whisper).",
@@ -188,6 +218,15 @@ def main(argv: list[str] | None = None) -> int:
     text = args.text_arg or args.text
     if not text:
         print("Error: text is required (pass it positionally or with --text).", file=sys.stderr)
+        return 2
+    if args.prompt_rms_min < 0.0:
+        print("Error: --prompt-rms-min must be >= 0.", file=sys.stderr)
+        return 2
+    if args.prompt_rms_max <= 0.0:
+        print("Error: --prompt-rms-max must be > 0.", file=sys.stderr)
+        return 2
+    if args.prompt_rms_min >= args.prompt_rms_max:
+        print("Error: --prompt-rms-min must be smaller than --prompt-rms-max.", file=sys.stderr)
         return 2
     if not args.verbose:
         os.environ.setdefault("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "1")
@@ -255,6 +294,11 @@ def main(argv: list[str] | None = None) -> int:
         prompt_text=prompt_text,
         offset=args.prompt_start,
         fade_ms=args.prompt_fade_ms,
+        trim_silence=args.trim_prompt_silence,
+        silence_threshold_db=args.prompt_silence_threshold_db,
+        keep_silence_ms=args.prompt_keep_silence_ms,
+        rms_min=args.prompt_rms_min,
+        rms_max=args.prompt_rms_max,
     )
     try:
         wav = lux.generate_speech(
