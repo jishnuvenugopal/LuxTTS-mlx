@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import torch
 
 class LuxTTS:
@@ -11,7 +12,7 @@ class LuxTTS:
         model_path='YatharthS/LuxTTS',
         device='cuda',
         threads=4,
-        vocoder_backend='torch',
+        vocoder_backend='mlx',
         vocoder_device=None,
     ):
         if model_path == 'YatharthS/LuxTTS':
@@ -99,8 +100,8 @@ class LuxTTS:
         if self.device == "mlx":
             encode_dict = {
                 "prompt_tokens": prompt_tokens,
-                "prompt_features_lens": prompt_features_lens.cpu().numpy(),
-                "prompt_features": prompt_features.cpu().numpy(),
+                "prompt_features_lens": np.array(prompt_features_lens, dtype=np.int64),
+                "prompt_features": np.array(prompt_features, dtype=np.float32),
                 "prompt_rms": float(prompt_rms),
             }
         else:

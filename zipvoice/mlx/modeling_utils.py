@@ -10,8 +10,6 @@ import torch
 from transformers import pipeline
 from huggingface_hub import snapshot_download
 from zipvoice.tokenizer.tokenizer import EmiliaTokenizer
-from zipvoice.utils.feature import VocosFbank
-from zipvoice.utils.infer import rms_norm
 
 from torch.nn.utils import parametrize
 from linacodec.vocoder.vocos import Vocos
@@ -85,7 +83,7 @@ def load_models_mlx(
     state_dict = _load_torch_state_dict(model_ckpt)
     apply_state_dict_mlx(model, state_dict)
 
-    feature_extractor = VocosFbank()
+    feature_extractor = None
     if vocoder_backend == "torch":
         if vocoder_device is None:
             vocoder_device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -96,7 +94,48 @@ def load_models_mlx(
     return model, feature_extractor, vocos, tokenizer, transcriber
 
 
-@torch.inference_mode
+def _compute_num_frames(num_samples: int, hop_length: int) -> int:
+    return int((int(num_samples) + int(hop_length) // 2) // int(hop_length))
+
+
+def _rms_norm_np(prompt_wav: np.ndarray, target_rms: float) -> tuple[np.ndarray, float]:
+    wav = prompt_wav.astype(np.float32, copy=False)
+    prompt_rms = float(np.sqrt(np.mean(np.square(wav), dtype=np.float64) + 1.0e-12))
+    if prompt_rms < target_rms and prompt_rms > 0:
+        wav = wav * (target_rms / prompt_rms)
+    return wav.astype(np.float32, copy=False), prompt_rms
+
+
+def _extract_vocos_fbank_np(
+    samples: np.ndarray,
+    sampling_rate: int = 24000,
+    n_mels: int = 100,
+    n_fft: int = 1024,
+    hop_length: int = 256,
+) -> np.ndarray:
+    mel = librosa.feature.melspectrogram(
+        y=samples.astype(np.float32, copy=False),
+        sr=sampling_rate,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        n_mels=n_mels,
+        center=True,
+        power=1.0,
+    )
+    logmel = np.log(np.clip(mel, 1.0e-7, None)).T.astype(np.float32, copy=False)
+
+    num_frames = _compute_num_frames(samples.shape[-1], hop_length)
+    if logmel.shape[0] > num_frames:
+        logmel = logmel[:num_frames]
+    elif logmel.shape[0] < num_frames:
+        if logmel.shape[0] == 0:
+            logmel = np.zeros((num_frames, n_mels), dtype=np.float32)
+        else:
+            pad = num_frames - logmel.shape[0]
+            logmel = np.pad(logmel, ((0, pad), (0, 0)), mode="edge")
+    return logmel
+
+
 def process_audio_mlx(
     audio,
     transcriber,
@@ -127,16 +166,15 @@ def process_audio_mlx(
             prompt_text = transcriber(prompt_wav2)["text"]
             print(prompt_text)
 
-    prompt_wav = torch.from_numpy(prompt_wav).unsqueeze(0)
-    prompt_wav, prompt_rms = rms_norm(prompt_wav, target_rms)
+    prompt_wav, prompt_rms = _rms_norm_np(prompt_wav, target_rms)
+    prompt_features = _extract_vocos_fbank_np(prompt_wav, sampling_rate=24000)
+    prompt_features = np.expand_dims(prompt_features, axis=0) * float(feat_scale)
+    prompt_features_lens = np.array([prompt_features.shape[1]], dtype=np.int64)
 
-    prompt_features = feature_extractor.extract(prompt_wav, sampling_rate=24000).to(device)
-    prompt_features = prompt_features.unsqueeze(0) * feat_scale
-    prompt_features_lens = torch.tensor([prompt_features.size(1)], device=device)
     if not prompt_text:
         prompt_text = "Hello."
     prompt_tokens = tokenizer.texts_to_token_ids([prompt_text])
-    return prompt_tokens, prompt_features_lens, prompt_features, prompt_rms
+    return prompt_tokens, prompt_features_lens, prompt_features.astype(np.float32), float(prompt_rms)
 
 
 def _to_numpy(x):

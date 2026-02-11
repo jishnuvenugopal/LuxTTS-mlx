@@ -69,7 +69,7 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda')
 # lux_tts = LuxTTS('YatharthS/LuxTTS', device='mlx')
 ```
 
-> Note: On MLX, diffusion runs in MLX. The CLI defaults to the torch vocoder for stability; pass `--vocoder mlx` to force full-MLX vocoder.
+> Note: On MLX, both diffusion and vocoder run in MLX by default.
 
 > Note: The MLX vocoder path uses `vocos-mlx` and will download the LuxTTS vocoder weights on first run.
 
@@ -153,12 +153,7 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "
 
 Tip: providing `--prompt-text` skips Whisper prompt transcription load, which is faster and avoids extra multiprocessing warnings.
 
-#### Force full MLX vocoder path
-```
-luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder mlx
-```
-
-#### Stability fallback: torch vocoder with MLX diffusion
+#### Optional fallback: torch vocoder with MLX diffusion
 ```
 luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder torch
 ```

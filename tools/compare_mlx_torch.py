@@ -196,7 +196,7 @@ def main():
     mlx_text_cond, mlx_pad = mlx_model.forward_text_inference_ratio_duration(
         tokens=tokens,
         prompt_tokens=prompt_tokens_m,
-        prompt_features_lens=mx.array(prompt_features_lens_m.cpu().numpy(), dtype=mx.int64),
+        prompt_features_lens=mx.array(np.array(prompt_features_lens_m), dtype=mx.int64),
         speed=1.0,
     )
     _stats("text_condition", torch_text_cond, mlx_text_cond)
@@ -211,10 +211,10 @@ def main():
     torch_speech = torch.where(torch_mask, torch.zeros_like(torch_speech), torch_speech)
 
     mlx_num_frames = int(mlx_text_cond.shape[1])
-    prompt_features_m_np = prompt_features_m.cpu().numpy()
+    prompt_features_m_np = np.array(prompt_features_m)
     mlx_speech = mx.pad(
         mx.array(prompt_features_m_np),
-        ((0, 0), (0, mlx_num_frames - prompt_features_m.shape[1]), (0, 0)),
+        ((0, 0), (0, mlx_num_frames - prompt_features_m_np.shape[1]), (0, 0)),
     )
     mlx_mask = mx.expand_dims(mlx_pad, axis=-1)
     mlx_speech = mx.where(mlx_mask, mx.zeros_like(mlx_speech), mlx_speech)

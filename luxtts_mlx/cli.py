@@ -66,9 +66,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--vocoder",
-        default="torch",
+        default="mlx",
         choices=["mlx", "torch"],
-        help="Vocoder backend when device=mlx (default: torch for stability).",
+        help="Vocoder backend when device=mlx (default: mlx).",
     )
     parser.add_argument(
         "--vocoder-device",

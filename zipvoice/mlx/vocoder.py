@@ -12,73 +12,20 @@ def _nonlinearity(x: mx.array) -> mx.array:
     return x * mx.sigmoid(x)
 
 
-def _fft_resample(audio: mx.array, src_sr: int, dst_sr: int) -> mx.array:
-    """Resample audio using FFT zero-padding (equivalent to sinc interpolation).
+def _upsample_by_2_linear(audio: mx.array) -> mx.array:
+    """Upsample by 2x with linear interpolation, avoiding FFT kernels."""
+    n = int(audio.shape[-1])
+    if n <= 1:
+        return mx.concatenate([audio, audio], axis=-1)
 
-    For upsampling, this zero-pads the spectrum and inverse-transforms,
-    giving band-limited interpolation that matches torchaudio.functional.resample
-    quality.  For the 24 kHz -> 48 kHz case used by the vocoder this is exact.
-    """
-    if src_sr == dst_sr:
-        return audio
-    n = audio.shape[-1]
-    new_n = int(round(n * dst_sr / src_sr))
-    if new_n == n:
-        return audio
+    left = audio[..., :-1]
+    right = audio[..., 1:]
+    mid = (left + right) * 0.5
 
-    spec = mx.fft.rfft(audio)
-    old_spec_len = spec.shape[-1]
-    new_spec_len = new_n // 2 + 1
-
-    if new_spec_len > old_spec_len:
-        # Upsampling: zero-pad the spectrum
-        pad_shape = list(spec.shape)
-        pad_shape[-1] = new_spec_len - old_spec_len
-        spec = mx.concatenate(
-            [spec, mx.zeros(pad_shape, dtype=spec.dtype)], axis=-1
-        )
-    elif new_spec_len < old_spec_len:
-        # Downsampling: truncate the spectrum
-        spec = spec[..., :new_spec_len]
-
-    result = mx.fft.irfft(spec, n=new_n)
-    # Scale to preserve amplitude (irfft normalization differs with length)
-    result = result * (float(new_n) / float(n))
-    return result
-
-
-def _crossover_merge_linkwitz_riley(
-    path1_48k: mx.array,
-    path2_48k: mx.array,
-    sample_rate: int = 48000,
-    cutoff: int = 4000,
-    transition_bins: int = 8,
-) -> mx.array:
-    spec1 = mx.fft.rfft(path1_48k)
-    spec2 = mx.fft.rfft(path2_48k)
-
-    n_bins = spec1.shape[-1]
-    cutoff_bin = int((cutoff / (sample_rate / 2)) * n_bins)
-
-    mask = mx.ones((n_bins,), dtype=mx.float32)
-    half = transition_bins // 2
-    start = max(0, cutoff_bin - half)
-    end = min(n_bins, cutoff_bin + half)
-    actual_width = end - start
-
-    if actual_width > 0:
-        x = mx.linspace(-1, 1, actual_width)
-        fade = 3 * mx.power((x + 1) / 2, 2) - 2 * mx.power((x + 1) / 2, 3)
-        mask = mx.concatenate(
-            [
-                mx.zeros((start,), dtype=mx.float32),
-                fade,
-                mx.ones((n_bins - end,), dtype=mx.float32),
-            ]
-        )
-
-    merged_spec = (spec1 * mask) + (spec2 * (1.0 - mask))
-    return mx.fft.irfft(merged_spec, n=path1_48k.shape[-1])
+    pairs = mx.stack([left, mid], axis=-1)
+    out = mx.reshape(pairs, pairs.shape[:-2] + (pairs.shape[-2] * 2,))
+    tail = mx.concatenate([audio[..., -1:], audio[..., -1:]], axis=-1)
+    return mx.concatenate([out, tail], axis=-1)
 
 
 class Snake1d(nn.Module):
@@ -218,18 +165,24 @@ class LuxVocoderMLX(nn.Module):
 
     def decode(self, features_input: mx.array) -> mx.array:
         features = self.backbone(features_input)
+        pred_audio_24k = self.head(features)
+        pred_audio_24k = mx.clip(pred_audio_24k, -1.0, 1.0)
+        pred_audio_24k_up = _upsample_by_2_linear(pred_audio_24k)
+
+        if not self.return_48k:
+            return pred_audio_24k_up
+
         upsampled = self.upsampler(features)
-        pred_audio = self.head_48k(upsampled)
-        pred_audio2 = self.head(features)
-        pred_audio2 = _fft_resample(pred_audio2, self.sample_rate, self.sample_rate * 2)
-        # Align lengths before crossover merge
-        min_len = min(pred_audio.shape[-1], pred_audio2.shape[-1])
-        pred_audio = pred_audio[..., :min_len]
-        pred_audio2 = pred_audio2[..., :min_len]
-        merged = _crossover_merge_linkwitz_riley(
-            pred_audio, pred_audio2, sample_rate=self.sample_rate * 2, cutoff=self.freq_range
-        )
-        return merged if self.return_48k else pred_audio2
+        pred_audio_48k = self.head_48k(upsampled)
+        pred_audio_48k = mx.clip(pred_audio_48k, -1.0, 1.0)
+
+        min_len = min(pred_audio_48k.shape[-1], pred_audio_24k_up.shape[-1])
+        pred_audio_48k = pred_audio_48k[..., :min_len]
+        pred_audio_24k_up = pred_audio_24k_up[..., :min_len]
+
+        # Stable time-domain blend between high-band 48k path and smoother 24k path.
+        merged = pred_audio_48k * 0.65 + pred_audio_24k_up * 0.35
+        return mx.clip(merged, -1.0, 1.0)
 
 
 def load_vocoder_mlx(model_path: str) -> LuxVocoderMLX:
