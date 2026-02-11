@@ -91,7 +91,18 @@ class ActivationDropoutAndLinear(nn.Module):
     ) -> None:
         super().__init__()
         self.activation = activation
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
+        # Keep parameter names aligned with the torch implementation
+        # (weight/bias on this module) so checkpoint loading lands on
+        # the tensors that are actually used in __call__.
+        linear = ScaledLinear(
+            in_features,
+            out_features,
+            bias=bias,
+            initial_scale=initial_scale,
+        )
+        self.weight = linear.weight
+        if "bias" in linear:
+            self.bias = linear.bias
         self.dropout_p = dropout_p
         self.dropout_shared_dim = dropout_shared_dim
         self.initial_scale = initial_scale
@@ -101,8 +112,26 @@ class ActivationDropoutAndLinear(nn.Module):
             x = swoosh_l(x)
         elif self.activation == "SwooshR":
             x = swoosh_r(x)
-        return self.linear(x)
+        x = mx.matmul(x, mx.transpose(self.weight))
+        if "bias" in self:
+            x = x + self.bias
+        return x
 
 
-def ScaledLinear(*args, **kwargs) -> nn.Linear:
-    return nn.Linear(*args, **kwargs)
+def ScaledLinear(
+    in_features: int,
+    out_features: int,
+    *,
+    initial_scale: float = 1.0,
+    bias: bool = True,
+) -> nn.Linear:
+    linear = nn.Linear(in_features, out_features, bias=bias)
+    linear.weight = linear.weight * initial_scale
+    if "bias" in linear:
+        scale = 0.1 * initial_scale
+        linear.bias = mx.random.uniform(
+            low=-scale,
+            high=scale,
+            shape=linear.bias.shape,
+        )
+    return linear
