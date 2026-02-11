@@ -47,3 +47,4 @@
 3. Tune only one parameter at a time (`prompt-start`, `ref-duration`, `speed`).
 4. Expand to multi-voice smoke tests after single-voice quality is stable.
 5. Use `tools/feedback_loop.py` for automated multi-round Torch-vs-MLX tuning.
+6. Loop now explores multiple parameter candidates per round and penalizes repetition artifacts.

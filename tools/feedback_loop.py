@@ -56,6 +56,7 @@ class QualityThresholds:
     max_start_ratio: float = 0.45
     max_tail_ratio: float = 0.58
     max_clip_frac: float = 0.0005
+    max_repeat_ratio: float = 0.55
 
 
 def _normalize_text(text: str) -> str:
@@ -78,14 +79,40 @@ def _slice_safe(wav: np.ndarray, start: int, end: int) -> np.ndarray:
     return wav[start:end]
 
 
+def _repeat_ratio(text: str) -> float:
+    norm = _normalize_text(text)
+    tokens = norm.split()
+    if not tokens:
+        return 1.0
+    if len(tokens) == 1:
+        return 1.0
+
+    counts: dict[str, int] = {}
+    for token in tokens:
+        counts[token] = counts.get(token, 0) + 1
+    dominant = max(counts.values()) / float(len(tokens))
+
+    repeats = 0
+    for i in range(1, len(tokens)):
+        if tokens[i] == tokens[i - 1]:
+            repeats += 1
+    adjacent = repeats / float(max(1, len(tokens) - 1))
+    return float(max(dominant, adjacent))
+
+
 def _score_run(metrics: dict[str, float | None]) -> float:
     asr = metrics.get("asr_sim")
-    asr_term = 2.8 * float(asr if asr is not None else 0.75)
+    asr_term = 3.2 * float(asr if asr is not None else 0.70)
+    repeat_ratio = float(metrics.get("repeat_ratio", 1.0) or 1.0)
+    repeat_penalty = 1.8 * max(0.0, repeat_ratio - 0.35)
+    low_asr_penalty = 0.9 * max(0.0, 0.30 - float(asr or 0.0))
     return float(
         asr_term
-        - 0.8 * float(metrics["start_ratio"])
-        - 0.7 * float(metrics["tail_ratio"])
-        - 8.0 * float(metrics["clip_frac"])
+        - 0.7 * float(metrics["start_ratio"])
+        - 0.8 * float(metrics["tail_ratio"])
+        - 10.0 * float(metrics["clip_frac"])
+        - repeat_penalty
+        - low_asr_penalty
     )
 
 
@@ -95,6 +122,9 @@ def _passes_thresholds(metrics: dict[str, float | None], thresholds: QualityThre
     if metrics["start_ratio"] > thresholds.max_start_ratio:
         return False
     if metrics["tail_ratio"] > thresholds.max_tail_ratio:
+        return False
+    repeat_ratio = metrics.get("repeat_ratio")
+    if repeat_ratio is not None and repeat_ratio > thresholds.max_repeat_ratio:
         return False
     asr_sim = metrics.get("asr_sim")
     if asr_sim is not None and asr_sim < thresholds.min_asr_sim:
@@ -191,8 +221,12 @@ def _evaluate_quality(
 
     hyp_text = ""
     asr_sim = None
+    repeat_ratio = None
+    asr_words = None
     if asr_pipe is not None:
         hyp_text = asr_pipe({"sampling_rate": sr, "raw": wav_np})["text"]
+        repeat_ratio = _repeat_ratio(hyp_text)
+        asr_words = float(len(_normalize_text(hyp_text).split()))
         asr_sim = SequenceMatcher(
             None,
             _normalize_text(target_text),
@@ -206,6 +240,8 @@ def _evaluate_quality(
         "start_ratio": start_ratio,
         "tail_ratio": tail_ratio,
         "asr_sim": float(asr_sim) if asr_sim is not None else None,
+        "repeat_ratio": float(repeat_ratio) if repeat_ratio is not None else None,
+        "asr_words": float(asr_words) if asr_words is not None else None,
     }
     return metrics, hyp_text
 
@@ -216,41 +252,137 @@ def _wav_to_numpy(wav_obj) -> np.ndarray:
     return np.asarray(wav_obj, dtype=np.float32).reshape(-1)
 
 
-def _next_params(
-    current: SynthesisParams,
-    metrics: dict[str, float | None],
-    thresholds: QualityThresholds,
-    prompt_duration: float,
-) -> SynthesisParams:
-    nxt = replace(current)
+def _params_key(params: SynthesisParams) -> tuple[Any, ...]:
+    return (
+        params.num_steps,
+        round(params.guidance_scale, 3),
+        round(params.t_shift, 3),
+        round(params.speed, 3),
+        params.duration_pad_frames,
+        round(params.ref_duration, 3),
+        round(params.prompt_start, 3),
+        round(params.prompt_fade_ms, 3),
+        params.trim_silence,
+        round(params.silence_threshold_db, 3),
+        round(params.keep_silence_ms, 3),
+        round(params.rms, 4),
+        round(params.rms_min, 4),
+        round(params.rms_max, 4),
+        params.return_smooth,
+    )
+
+
+def _clamp_params(params: SynthesisParams, prompt_duration: float) -> SynthesisParams:
+    p = replace(params)
+    p.num_steps = int(min(10, max(3, p.num_steps)))
+    p.guidance_scale = float(min(4.0, max(1.8, p.guidance_scale)))
+    p.t_shift = float(min(0.68, max(0.32, p.t_shift)))
+    p.speed = float(min(1.08, max(0.85, p.speed)))
+    p.duration_pad_frames = int(min(56, max(0, p.duration_pad_frames)))
+    p.prompt_fade_ms = float(min(32.0, max(4.0, p.prompt_fade_ms)))
+    p.silence_threshold_db = float(min(-24.0, max(-56.0, p.silence_threshold_db)))
+    p.keep_silence_ms = float(min(90.0, max(0.0, p.keep_silence_ms)))
+    p.rms_max = float(min(0.04, max(0.016, p.rms_max)))
+    p.rms_min = float(min(p.rms_max - 0.001, max(0.002, p.rms_min)))
+    p.rms = float(min(p.rms_max, max(p.rms_min, p.rms)))
+
     max_start = max(0.0, prompt_duration - 1.2)
+    p.prompt_start = float(min(max_start, max(0.0, p.prompt_start)))
+    avail_ref = max(1.2, prompt_duration - p.prompt_start - 0.05)
+    p.ref_duration = float(min(avail_ref, max(1.2, p.ref_duration)))
+    return p
 
-    if metrics["start_ratio"] > thresholds.max_start_ratio:
-        nxt.prompt_start = min(max_start, nxt.prompt_start + 0.14)
-        nxt.prompt_fade_ms = min(30.0, nxt.prompt_fade_ms + 3.0)
-        nxt.silence_threshold_db = max(-54.0, nxt.silence_threshold_db - 2.0)
 
-    if metrics["tail_ratio"] > thresholds.max_tail_ratio:
-        nxt.duration_pad_frames = min(48, nxt.duration_pad_frames + 8)
-        nxt.t_shift = max(0.35, nxt.t_shift - 0.05)
-        nxt.speed = min(1.05, nxt.speed + 0.03)
+def _candidate_variants(
+    base: SynthesisParams,
+    round_idx: int,
+    prompt_duration: float,
+    thresholds: QualityThresholds,
+    last_best_metrics: dict[str, float | None] | None,
+    max_candidates: int,
+) -> list[SynthesisParams]:
+    candidates: list[SynthesisParams] = []
+    seen: set[tuple[Any, ...]] = set()
 
-    asr_sim = metrics.get("asr_sim")
-    if asr_sim is not None and asr_sim < thresholds.min_asr_sim:
-        nxt.num_steps = min(8, nxt.num_steps + 1)
-        nxt.t_shift = max(0.35, nxt.t_shift - 0.03)
-        nxt.speed = min(1.05, max(0.95, nxt.speed) + 0.01)
-        nxt.ref_duration = min(nxt.ref_duration + 0.35, max(1.4, prompt_duration - nxt.prompt_start - 0.05))
+    def add(candidate: SynthesisParams) -> None:
+        clamped = _clamp_params(candidate, prompt_duration)
+        key = _params_key(clamped)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(clamped)
 
-    if metrics["clip_frac"] > thresholds.max_clip_frac or metrics["peak"] > 0.98:
-        nxt.rms_max = max(0.018, nxt.rms_max - 0.003)
-        nxt.rms = min(nxt.rms, nxt.rms_max)
+    add(base)
 
-    available_ref = max(1.2, prompt_duration - nxt.prompt_start - 0.05)
-    nxt.ref_duration = min(max(1.2, nxt.ref_duration), available_ref)
-    if nxt.rms_min >= nxt.rms_max:
-        nxt.rms_min = max(0.002, nxt.rms_max - 0.004)
-    return nxt
+    max_start = max(0.0, prompt_duration - 1.2)
+    if round_idx == 1:
+        add(replace(base, prompt_start=min(max_start, 0.18)))
+        add(replace(base, prompt_start=min(max_start, 0.35), ref_duration=min(2.0, max(1.2, prompt_duration - 0.4))))
+        add(replace(base, ref_duration=min(3.0, max(1.2, prompt_duration - 0.05))))
+        add(replace(base, trim_silence=False, prompt_fade_ms=18.0))
+        add(replace(base, silence_threshold_db=-48.0, keep_silence_ms=45.0))
+        add(replace(base, guidance_scale=2.4, t_shift=0.45, speed=0.97, num_steps=max(6, base.num_steps)))
+        add(replace(base, guidance_scale=2.0, t_shift=0.38, speed=1.0, return_smooth=False, num_steps=max(6, base.num_steps)))
+    else:
+        m = last_best_metrics or {}
+        asr = float(m.get("asr_sim") or 0.0)
+        repeat_ratio = float(m.get("repeat_ratio") or 1.0)
+        start_ratio = float(m.get("start_ratio") or 0.0)
+        tail_ratio = float(m.get("tail_ratio") or 0.0)
+        clip_frac = float(m.get("clip_frac") or 0.0)
+        peak = float(m.get("peak") or 0.0)
+
+        if asr < thresholds.min_asr_sim or repeat_ratio > thresholds.max_repeat_ratio:
+            add(replace(base, prompt_start=min(max_start, base.prompt_start + 0.16)))
+            add(
+                replace(
+                    base,
+                    prompt_start=min(max_start, base.prompt_start + 0.32),
+                    ref_duration=max(1.2, base.ref_duration - 0.45),
+                )
+            )
+            add(replace(base, trim_silence=not base.trim_silence))
+            add(replace(base, return_smooth=not base.return_smooth))
+            add(
+                replace(
+                    base,
+                    guidance_scale=max(1.8, base.guidance_scale - 0.4),
+                    t_shift=max(0.32, base.t_shift - 0.06),
+                    speed=min(1.05, base.speed + 0.05),
+                    num_steps=min(10, base.num_steps + 1),
+                )
+            )
+            add(replace(base, silence_threshold_db=max(-56.0, base.silence_threshold_db - 3.0)))
+            add(replace(base, guidance_scale=min(3.8, base.guidance_scale + 0.3), t_shift=min(0.62, base.t_shift + 0.06)))
+
+        if start_ratio > thresholds.max_start_ratio:
+            add(
+                replace(
+                    base,
+                    prompt_start=min(max_start, base.prompt_start + 0.22),
+                    prompt_fade_ms=min(30.0, base.prompt_fade_ms + 4.0),
+                    silence_threshold_db=max(-56.0, base.silence_threshold_db - 2.0),
+                )
+            )
+
+        if tail_ratio > thresholds.max_tail_ratio:
+            add(
+                replace(
+                    base,
+                    duration_pad_frames=min(56, base.duration_pad_frames + 10),
+                    t_shift=max(0.32, base.t_shift - 0.05),
+                    speed=min(1.05, base.speed + 0.03),
+                )
+            )
+
+        if clip_frac > thresholds.max_clip_frac or peak > 0.98:
+            add(replace(base, rms_max=max(0.018, base.rms_max - 0.003)))
+
+        # Keep at least a couple mild exploration candidates each round.
+        add(replace(base, speed=max(0.88, base.speed - 0.04), t_shift=min(0.62, base.t_shift + 0.05)))
+        add(replace(base, guidance_scale=2.2, t_shift=0.42, speed=0.98))
+
+    return candidates[: max(1, max_candidates)]
 
 
 def _write_summary_markdown(
@@ -268,7 +400,8 @@ def _write_summary_markdown(
         f"ASR>={thresholds.min_asr_sim:.2f}, "
         f"start_ratio<={thresholds.max_start_ratio:.2f}, "
         f"tail_ratio<={thresholds.max_tail_ratio:.2f}, "
-        f"clip_frac<={thresholds.max_clip_frac:.4f}"
+        f"clip_frac<={thresholds.max_clip_frac:.4f}, "
+        f"repeat_ratio<={thresholds.max_repeat_ratio:.2f}"
     )
     lines.append("")
 
@@ -282,6 +415,7 @@ def _write_summary_markdown(
             f"asr={final['metrics'].get('asr_sim')}, "
             f"start={final['metrics']['start_ratio']:.3f}, "
             f"tail={final['metrics']['tail_ratio']:.3f}, "
+            f"repeat={final['metrics'].get('repeat_ratio')}, "
             f"clip={final['metrics']['clip_frac']:.4f}, "
             f"peak={final['metrics']['peak']:.3f}"
         )
@@ -313,12 +447,14 @@ def main() -> None:
         help="When device=mlx, compare mlx+torch vocoders or force one.",
     )
     parser.add_argument("--max-rounds", type=int, default=4, help="Maximum tuning rounds per prompt.")
+    parser.add_argument("--max-candidates-per-round", type=int, default=10, help="Parameter candidates explored each round.")
     parser.add_argument("--out-dir", default="feedback-loop-runs", help="Output directory.")
 
     parser.add_argument("--min-asr-sim", type=float, default=0.78)
     parser.add_argument("--max-start-ratio", type=float, default=0.45)
     parser.add_argument("--max-tail-ratio", type=float, default=0.58)
     parser.add_argument("--max-clip-frac", type=float, default=0.0005)
+    parser.add_argument("--max-repeat-ratio", type=float, default=0.55)
 
     args = parser.parse_args()
 
@@ -332,6 +468,7 @@ def main() -> None:
         max_start_ratio=args.max_start_ratio,
         max_tail_ratio=args.max_tail_ratio,
         max_clip_frac=args.max_clip_frac,
+        max_repeat_ratio=args.max_repeat_ratio,
     )
 
     asr_pipe = _load_local_asr()
@@ -377,67 +514,83 @@ def main() -> None:
         params = SynthesisParams(ref_duration=min(2.4, max(1.2, prompt_duration - 0.05)))
         rounds: list[dict[str, Any]] = []
         passed = False
+        last_best_metrics: dict[str, float | None] | None = None
 
         for round_idx in range(1, args.max_rounds + 1):
-            per_backend: list[dict[str, Any]] = []
-            print(f"Round {round_idx}: testing {len(engines)} backend(s)")
+            param_candidates = _candidate_variants(
+                params,
+                round_idx=round_idx,
+                prompt_duration=prompt_duration,
+                thresholds=thresholds,
+                last_best_metrics=last_best_metrics,
+                max_candidates=args.max_candidates_per_round,
+            )
+            per_round: list[dict[str, Any]] = []
+            print(
+                f"Round {round_idx}: testing {len(param_candidates)} param candidates "
+                f"x {len(engines)} backend(s)"
+            )
 
-            for backend_name, engine in engines.items():
-                round_tag = f"round{round_idx:02d}_{backend_name}"
-                out_wav = case_dir / f"{round_tag}.wav"
+            for cand_idx, candidate in enumerate(param_candidates, start=1):
+                for backend_name, engine in engines.items():
+                    round_tag = f"round{round_idx:02d}_cand{cand_idx:02d}_{backend_name}"
+                    out_wav = case_dir / f"{round_tag}.wav"
 
-                encoded = engine.encode_prompt(
-                    str(case.path),
-                    duration=params.ref_duration,
-                    rms=params.rms,
-                    prompt_text=case.prompt_text,
-                    offset=params.prompt_start,
-                    fade_ms=params.prompt_fade_ms,
-                    trim_silence=params.trim_silence,
-                    silence_threshold_db=params.silence_threshold_db,
-                    keep_silence_ms=params.keep_silence_ms,
-                    rms_min=params.rms_min,
-                    rms_max=params.rms_max,
-                )
+                    encoded = engine.encode_prompt(
+                        str(case.path),
+                        duration=candidate.ref_duration,
+                        rms=candidate.rms,
+                        prompt_text=case.prompt_text,
+                        offset=candidate.prompt_start,
+                        fade_ms=candidate.prompt_fade_ms,
+                        trim_silence=candidate.trim_silence,
+                        silence_threshold_db=candidate.silence_threshold_db,
+                        keep_silence_ms=candidate.keep_silence_ms,
+                        rms_min=candidate.rms_min,
+                        rms_max=candidate.rms_max,
+                    )
 
-                wav = engine.generate_speech(
-                    target_text,
-                    encoded,
-                    num_steps=params.num_steps,
-                    guidance_scale=params.guidance_scale,
-                    t_shift=params.t_shift,
-                    speed=params.speed,
-                    return_smooth=params.return_smooth,
-                    duration_pad_frames=params.duration_pad_frames,
-                )
-                wav_np = _wav_to_numpy(wav)
-                sf.write(out_wav, wav_np, 48000)
+                    wav = engine.generate_speech(
+                        target_text,
+                        encoded,
+                        num_steps=candidate.num_steps,
+                        guidance_scale=candidate.guidance_scale,
+                        t_shift=candidate.t_shift,
+                        speed=candidate.speed,
+                        return_smooth=candidate.return_smooth,
+                        duration_pad_frames=candidate.duration_pad_frames,
+                    )
+                    wav_np = _wav_to_numpy(wav)
+                    sf.write(out_wav, wav_np, 48000)
 
-                metrics, hyp_text = _evaluate_quality(wav_np, target_text, asr_pipe)
-                score = _score_run(metrics)
-                record = {
-                    "backend": backend_name,
-                    "output_wav": str(out_wav),
-                    "params": asdict(params),
-                    "metrics": metrics,
-                    "score": score,
-                    "asr_text": hyp_text,
-                }
-                per_backend.append(record)
-                print(
-                    f"  {backend_name:>5} score={score:.3f} "
-                    f"asr={metrics.get('asr_sim')} "
-                    f"start={metrics['start_ratio']:.3f} "
-                    f"tail={metrics['tail_ratio']:.3f} clip={metrics['clip_frac']:.4f}"
-                )
+                    metrics, hyp_text = _evaluate_quality(wav_np, target_text, asr_pipe)
+                    score = _score_run(metrics)
+                    record = {
+                        "candidate_index": cand_idx,
+                        "backend": backend_name,
+                        "output_wav": str(out_wav),
+                        "params": asdict(candidate),
+                        "metrics": metrics,
+                        "score": score,
+                        "asr_text": hyp_text,
+                    }
+                    per_round.append(record)
+                    print(
+                        f"  cand={cand_idx:02d} {backend_name:>5} score={score:.3f} "
+                        f"asr={metrics.get('asr_sim')} rep={metrics.get('repeat_ratio')} "
+                        f"start={metrics['start_ratio']:.3f} tail={metrics['tail_ratio']:.3f} "
+                        f"clip={metrics['clip_frac']:.4f}"
+                    )
 
-            best = max(per_backend, key=lambda x: x["score"])
+            best = max(per_round, key=lambda x: x["score"])
             best_metrics = best["metrics"]
             round_report = {
                 "round": round_idx,
-                "params": asdict(params),
-                "candidates": per_backend,
+                "seed_params": asdict(params),
+                "candidate_count": len(param_candidates),
+                "candidates": per_round,
                 "best_backend": best["backend"],
+                "best_candidate_index": best.get("candidate_index"),
                 "best_score": best["score"],
             }
             rounds.append(round_report)
@@ -447,8 +600,9 @@ def main() -> None:
                 print(f"  -> thresholds passed on round {round_idx} with backend={best['backend']}")
                 break
 
-            params = _next_params(params, best_metrics, thresholds, prompt_duration)
-            print("  -> thresholds not met, tuning params and continuing.")
+            params = _clamp_params(SynthesisParams(**best["params"]), prompt_duration)
+            last_best_metrics = best_metrics
+            print("  -> thresholds not met, best candidate becomes next seed params.")
 
         final_choice = max(rounds[-1]["candidates"], key=lambda x: x["score"])
         report = {

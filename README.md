@@ -179,6 +179,7 @@ Use this to auto-run multi-round quality checks, compare backends, and tune para
   --device mlx \
   --vocoder-set both \
   --max-rounds 4 \
+  --max-candidates-per-round 10 \
   --out-dir feedback-loop-runs
 ```
 
@@ -186,6 +187,7 @@ Outputs:
 - Per-prompt WAVs for each round/backend.
 - Per-prompt JSON reports.
 - Aggregate summary: `feedback-loop-runs/SUMMARY.md`.
+- Uses ASR similarity + start/tail artifact ratios + repetition ratio to pick winners.
 
   
 ## Info
