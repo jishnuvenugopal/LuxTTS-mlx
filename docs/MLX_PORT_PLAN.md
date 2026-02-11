@@ -56,6 +56,7 @@ From recent voice smoke tests:
 - Build a small voice smoke matrix (4+ prompt clips, same text).
 - Gate release on intelligibility and artifact checks.
 - Publish only after all smoke clips pass acceptable quality.
+- Automate iterative tuning + backend comparison with `tools/feedback_loop.py`.
 
 ## 4) Versioning Strategy
 

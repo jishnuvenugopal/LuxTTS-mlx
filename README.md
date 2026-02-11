@@ -167,6 +167,26 @@ luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --dev
 
 If you hit a Metal kernel error such as `Unable to load function four_step_mem_8192...`, re-run with `--vocoder torch`.
 
+#### Automated recursive feedback loop (Torch vs MLX)
+Use this to auto-run multi-round quality checks, compare backends, and tune params until thresholds pass:
+
+```bash
+./.venv/bin/python tools/feedback_loop.py \
+  --text "This is a stability smoke test for LuxTTS MLX prompt preprocessing." \
+  --prompt /path/to/prompt1.wav \
+  --prompt /path/to/prompt2.wav \
+  --prompt-text "Exact transcript of prompt clips." \
+  --device mlx \
+  --vocoder-set both \
+  --max-rounds 4 \
+  --out-dir feedback-loop-runs
+```
+
+Outputs:
+- Per-prompt WAVs for each round/backend.
+- Per-prompt JSON reports.
+- Aggregate summary: `feedback-loop-runs/SUMMARY.md`.
+
   
 ## Info
 
