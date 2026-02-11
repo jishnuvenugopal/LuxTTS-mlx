@@ -181,19 +181,44 @@ Use this to auto-run multi-round quality checks, compare backends, and tune para
   --max-rounds 4 \
   --max-candidates-per-round 10 \
   --keep-wavs final \
+  --round-history none \
   --compact-report \
+  --no-write-case-reports \
   --out-dir feedback-loop-runs
 ```
 
 Outputs:
 - Storage-optimized by default:
   - only final best WAV per prompt (`--keep-wavs final`)
-  - compact JSON (no huge per-candidate dumps)
-- Per-prompt JSON reports.
+  - optional zero round history (`--round-history none`)
+  - no per-case JSON unless enabled (`--write-case-reports`)
 - Aggregate summary: `feedback-loop-runs/SUMMARY.md`.
 - Uses ASR similarity + start/tail artifact ratios + repetition ratio to pick winners.
+- Includes prompt transcript safeguards for auto-transcribed prompt text:
+  - `--auto-prompt-text-policy strict` (default): fail if transcript looks unstable.
+  - `--auto-prompt-text-policy target-fallback`: use target text when auto transcript looks unstable.
+  - `--auto-prompt-text-policy hello-fallback`: use `"Hello."` fallback.
+- Reuses prompt encodings across candidate variants to speed multi-round loops.
 
 If you need full debug artifacts, use `--keep-wavs all --no-compact-report --keep-asr-text`.
+
+#### 5-scenario quality/performance matrix (recommended smoke gate)
+Run a fixed short/medium/long/numeric/punctuation matrix with storage-safe outputs:
+
+```bash
+./.venv/bin/python tools/scenario_matrix.py \
+  --prompt /path/to/prompt.wav \
+  --prompt-text "Exact transcript of prompt clip." \
+  --device mlx \
+  --vocoder-set both \
+  --keep-wavs best \
+  --out-dir scenario-matrix-runs
+```
+
+Outputs:
+- `scenario-matrix-runs/report.json`
+- `scenario-matrix-runs/SUMMARY.md`
+- one best wav per scenario (or all/none via `--keep-wavs`)
 
   
 ## Info

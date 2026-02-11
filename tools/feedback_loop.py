@@ -13,6 +13,8 @@ import csv
 import json
 import re
 import shutil
+import time
+import warnings
 from dataclasses import asdict, dataclass, replace
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -30,6 +32,7 @@ class PromptCase:
     path: Path
     prompt_text: str
     name: str
+    prompt_text_source: str = "unknown"
 
 
 @dataclass
@@ -147,6 +150,86 @@ def _load_local_asr():
     return None
 
 
+def _configure_runtime_warnings() -> None:
+    # LinaCodec currently emits a noisy torch.fft out-tensor resize warning on some builds.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"`torch\.cuda\.amp\.autocast\(args\.\.\.\)` is deprecated.*",
+        category=FutureWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"An output with one or more elements was resized since it had shape \[\].*",
+        category=UserWarning,
+    )
+
+
+def _try_apply_linacodec_patch() -> None:
+    try:
+        from zipvoice.vocoder_patches import apply_linacodec_linkwitz_patch
+    except Exception:
+        return
+    try:
+        apply_linacodec_linkwitz_patch()
+    except Exception:
+        return
+
+
+def _is_prompt_text_suspicious(
+    prompt_text: str,
+    max_words: int,
+    max_repeat_ratio: float,
+) -> tuple[bool, str]:
+    norm = _normalize_text(prompt_text)
+    if not norm:
+        return True, "empty transcript"
+    words = norm.split()
+    if len(words) > max_words:
+        return True, f"too many words ({len(words)} > {max_words})"
+    repeat = _repeat_ratio(prompt_text)
+    if repeat > max_repeat_ratio:
+        return True, f"high repetition ratio ({repeat:.3f} > {max_repeat_ratio:.3f})"
+    return False, ""
+
+
+def _resolve_auto_prompt_text(
+    *,
+    path: Path,
+    raw_text: str,
+    target_text: str,
+    policy: str,
+    max_words: int,
+    max_repeat_ratio: float,
+) -> tuple[str, str]:
+    cleaned = raw_text.strip()
+    suspicious, reason = _is_prompt_text_suspicious(
+        cleaned,
+        max_words=max_words,
+        max_repeat_ratio=max_repeat_ratio,
+    )
+    if not suspicious:
+        return cleaned, "asr"
+
+    if policy == "target-fallback":
+        print(
+            "Warning: auto prompt transcript looks unstable for "
+            f"{path} ({reason}); falling back to target text."
+        )
+        return target_text, "target-fallback"
+    if policy == "hello-fallback":
+        print(
+            "Warning: auto prompt transcript looks unstable for "
+            f"{path} ({reason}); falling back to 'Hello.'."
+        )
+        return "Hello.", "hello-fallback"
+
+    raise ValueError(
+        "Auto prompt transcription looks unstable for "
+        f"{path} ({reason}). Pass --prompt-text/--manifest or set "
+        "--auto-prompt-text-policy target-fallback."
+    )
+
+
 def _prompt_duration_seconds(path: Path) -> float:
     info = sf.info(str(path))
     return float(info.frames / max(1, info.samplerate))
@@ -163,18 +246,33 @@ def _load_cases(args, asr_pipe) -> list[PromptCase]:
             for i, row in enumerate(reader):
                 prompt_path = Path(row["prompt"]).expanduser().resolve()
                 if not prompt_path.is_file():
+                    if args.skip_missing_prompts:
+                        print(f"Warning: skipping missing prompt: {prompt_path}")
+                        continue
                     raise FileNotFoundError(f"Prompt missing: {prompt_path}")
                 name = row.get("name") or prompt_path.stem or f"prompt_{i+1}"
-                cases.append(PromptCase(path=prompt_path, prompt_text=row["prompt_text"], name=name))
+                prompt_text = str(row["prompt_text"]).strip()
+                if not prompt_text:
+                    raise ValueError(f"Manifest prompt_text is empty for prompt: {prompt_path}")
+                cases.append(
+                    PromptCase(
+                        path=prompt_path,
+                        prompt_text=prompt_text,
+                        name=name,
+                        prompt_text_source="manifest",
+                    )
+                )
+        if not cases:
+            raise ValueError("No valid prompts found in manifest.")
         return cases
 
     if not args.prompt:
         raise ValueError("Pass --prompt (repeatable) or --manifest.")
 
     prompt_paths = [Path(p).expanduser().resolve() for p in args.prompt]
-    for p in prompt_paths:
-        if not p.is_file():
-            raise FileNotFoundError(f"Prompt missing: {p}")
+    valid_prompt_paths: list[Path] = []
+    valid_prompt_texts: list[str] = []
+    valid_prompt_sources: list[str] = []
 
     prompt_texts: list[str] = []
     if args.prompt_text:
@@ -184,17 +282,67 @@ def _load_cases(args, asr_pipe) -> list[PromptCase]:
             prompt_texts = list(args.prompt_text)
         else:
             raise ValueError("Pass one --prompt-text for all prompts or one per prompt.")
+        for p, t in zip(prompt_paths, prompt_texts):
+            if p.is_file():
+                valid_prompt_paths.append(p)
+                prompt_text = str(t).strip()
+                if not prompt_text:
+                    raise ValueError(f"Prompt text is empty for prompt: {p}")
+                valid_prompt_texts.append(prompt_text)
+                valid_prompt_sources.append("arg")
+                continue
+            if args.skip_missing_prompts:
+                print(f"Warning: skipping missing prompt: {p}")
+                continue
+            raise FileNotFoundError(f"Prompt missing: {p}")
     else:
-        if asr_pipe is None:
-            raise RuntimeError(
-                "No --prompt-text provided and no local ASR cache found. "
-                "Pass --prompt-text explicitly."
-            )
         for p in prompt_paths:
-            prompt_texts.append(asr_pipe(str(p))["text"].strip())
+            if p.is_file():
+                valid_prompt_paths.append(p)
+                continue
+            if args.skip_missing_prompts:
+                print(f"Warning: skipping missing prompt: {p}")
+                continue
+            raise FileNotFoundError(f"Prompt missing: {p}")
 
-    for i, (p, t) in enumerate(zip(prompt_paths, prompt_texts)):
-        cases.append(PromptCase(path=p, prompt_text=t, name=f"prompt_{i+1}_{p.stem}"))
+        if not valid_prompt_paths:
+            raise ValueError("No valid prompt files found.")
+
+        if asr_pipe is None:
+            if args.auto_prompt_text_policy == "target-fallback":
+                print("Warning: local Whisper cache not found; using target text as prompt text.")
+                valid_prompt_texts = [args.text for _ in valid_prompt_paths]
+                valid_prompt_sources = ["target-fallback" for _ in valid_prompt_paths]
+            elif args.auto_prompt_text_policy == "hello-fallback":
+                print("Warning: local Whisper cache not found; using 'Hello.' as prompt text.")
+                valid_prompt_texts = ["Hello." for _ in valid_prompt_paths]
+                valid_prompt_sources = ["hello-fallback" for _ in valid_prompt_paths]
+            else:
+                raise RuntimeError(
+                    "No --prompt-text provided and no local ASR cache found. "
+                    "Pass --prompt-text explicitly or set "
+                    "--auto-prompt-text-policy target-fallback."
+                )
+        for p in valid_prompt_paths:
+            if asr_pipe is None:
+                continue
+            raw_prompt_text = asr_pipe(str(p))["text"]
+            resolved_text, resolved_source = _resolve_auto_prompt_text(
+                path=p,
+                raw_text=raw_prompt_text,
+                target_text=args.text,
+                policy=args.auto_prompt_text_policy,
+                max_words=args.max_auto_prompt_words,
+                max_repeat_ratio=args.max_auto_prompt_repeat,
+            )
+            valid_prompt_texts.append(resolved_text)
+            valid_prompt_sources.append(resolved_source)
+
+    if not valid_prompt_paths:
+        raise ValueError("No valid prompt files found.")
+
+    for i, (p, t, source) in enumerate(zip(valid_prompt_paths, valid_prompt_texts, valid_prompt_sources)):
+        cases.append(PromptCase(path=p, prompt_text=t, name=f"prompt_{i+1}_{p.stem}", prompt_text_source=source))
     return cases
 
 
@@ -225,7 +373,19 @@ def _evaluate_quality(
     repeat_ratio = None
     asr_words = None
     if asr_pipe is not None:
-        hyp_text = asr_pipe({"sampling_rate": sr, "raw": wav_np})["text"]
+        try:
+            asr_out = asr_pipe({"sampling_rate": sr, "raw": wav_np})
+        except ValueError as ex:
+            if "more than 3000 mel input features" in str(ex):
+                asr_out = asr_pipe({"sampling_rate": sr, "raw": wav_np}, return_timestamps=True)
+            else:
+                print(f"Warning: ASR evaluation failed: {ex}")
+                asr_out = {"text": ""}
+        except Exception as ex:
+            print(f"Warning: ASR evaluation failed: {ex}")
+            asr_out = {"text": ""}
+
+        hyp_text = str(asr_out.get("text", ""))
         repeat_ratio = _repeat_ratio(hyp_text)
         asr_words = float(len(_normalize_text(hyp_text).split()))
         asr_sim = SequenceMatcher(
@@ -261,6 +421,8 @@ def _serialize_candidate(record: dict[str, Any], keep_asr_text: bool) -> dict[st
         "params": record["params"],
         "metrics": record["metrics"],
         "score": record["score"],
+        "timing_sec": record.get("timing_sec"),
+        "encode_cache_hit": record.get("encode_cache_hit"),
     }
     if keep_asr_text:
         out["asr_text"] = record.get("asr_text", "")
@@ -306,6 +468,20 @@ def _clamp_params(params: SynthesisParams, prompt_duration: float) -> SynthesisP
     avail_ref = max(1.2, prompt_duration - p.prompt_start - 0.05)
     p.ref_duration = float(min(avail_ref, max(1.2, p.ref_duration)))
     return p
+
+
+def _encode_params_key(candidate: SynthesisParams) -> tuple[Any, ...]:
+    return (
+        round(candidate.ref_duration, 3),
+        round(candidate.rms, 4),
+        round(candidate.prompt_start, 3),
+        round(candidate.prompt_fade_ms, 3),
+        candidate.trim_silence,
+        round(candidate.silence_threshold_db, 3),
+        round(candidate.keep_silence_ms, 3),
+        round(candidate.rms_min, 4),
+        round(candidate.rms_max, 4),
+    )
 
 
 def _candidate_variants(
@@ -424,6 +600,7 @@ def _write_summary_markdown(
         final = report["final_choice"]
         lines.append(f"## {report['case_name']}")
         lines.append(f"- Prompt: `{report['prompt_path']}`")
+        lines.append(f"- Prompt text source: `{report.get('prompt_text_source')}`")
         lines.append(f"- Final backend: `{final['backend']}`")
         lines.append(
             "- Final metrics: "
@@ -465,6 +642,12 @@ def main() -> None:
     parser.add_argument("--max-candidates-per-round", type=int, default=10, help="Parameter candidates explored each round.")
     parser.add_argument("--out-dir", default="feedback-loop-runs", help="Output directory.")
     parser.add_argument(
+        "--skip-missing-prompts",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Skip missing prompt files instead of failing the whole run (default: true).",
+    )
+    parser.add_argument(
         "--keep-wavs",
         choices=["none", "final", "best-round", "all"],
         default="final",
@@ -477,10 +660,22 @@ def main() -> None:
         help="Store compact JSON report (default: true).",
     )
     parser.add_argument(
+        "--round-history",
+        choices=["none", "best", "all"],
+        default=None,
+        help="Per-round JSON detail to store. Defaults to best when --compact-report else all.",
+    )
+    parser.add_argument(
         "--keep-asr-text",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Include raw ASR transcript text in JSON report (default: false).",
+    )
+    parser.add_argument(
+        "--write-case-reports",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write per-prompt report.json files in each case directory (default: false).",
     )
     parser.add_argument(
         "--clean-out-dir",
@@ -494,8 +689,32 @@ def main() -> None:
     parser.add_argument("--max-tail-ratio", type=float, default=0.58)
     parser.add_argument("--max-clip-frac", type=float, default=0.0005)
     parser.add_argument("--max-repeat-ratio", type=float, default=0.55)
+    parser.add_argument(
+        "--auto-prompt-text-policy",
+        choices=["strict", "target-fallback", "hello-fallback"],
+        default="strict",
+        help=(
+            "Behavior when --prompt-text is omitted and auto transcript looks unstable. "
+            "strict=fail, target-fallback=use --text, hello-fallback=use 'Hello.'."
+        ),
+    )
+    parser.add_argument(
+        "--max-auto-prompt-words",
+        type=int,
+        default=24,
+        help="Maximum words allowed for auto-transcribed prompt text before it is treated as unstable.",
+    )
+    parser.add_argument(
+        "--max-auto-prompt-repeat",
+        type=float,
+        default=0.72,
+        help="Maximum repetition ratio allowed for auto-transcribed prompt text before fallback/fail.",
+    )
 
     args = parser.parse_args()
+    _configure_runtime_warnings()
+    _try_apply_linacodec_patch()
+    round_history = args.round_history or ("best" if args.compact_report else "all")
 
     from luxtts_mlx import LuxTTS
 
@@ -556,12 +775,17 @@ def main() -> None:
 
         params = SynthesisParams(ref_duration=min(2.4, max(1.2, prompt_duration - 0.05)))
         rounds: list[dict[str, Any]] = []
+        rounds_run = 0
         passed = False
         last_best_metrics: dict[str, float | None] | None = None
         last_best_record: dict[str, Any] | None = None
         last_best_wav: np.ndarray | None = None
+        encode_cache: dict[tuple[Any, ...], Any] = {}
+        encode_cache_hits = 0
+        encode_cache_misses = 0
 
         for round_idx in range(1, args.max_rounds + 1):
+            rounds_run = round_idx
             param_candidates = _candidate_variants(
                 params,
                 round_idx=round_idx,
@@ -584,20 +808,31 @@ def main() -> None:
                     round_tag = f"round{round_idx:02d}_cand{cand_idx:02d}_{backend_name}"
                     out_wav = case_dir / f"{round_tag}.wav"
 
-                    encoded = engine.encode_prompt(
-                        str(case.path),
-                        duration=candidate.ref_duration,
-                        rms=candidate.rms,
-                        prompt_text=case.prompt_text,
-                        offset=candidate.prompt_start,
-                        fade_ms=candidate.prompt_fade_ms,
-                        trim_silence=candidate.trim_silence,
-                        silence_threshold_db=candidate.silence_threshold_db,
-                        keep_silence_ms=candidate.keep_silence_ms,
-                        rms_min=candidate.rms_min,
-                        rms_max=candidate.rms_max,
-                    )
+                    cache_key = (backend_name,) + _encode_params_key(candidate)
+                    encode_t0 = time.perf_counter()
+                    encoded = encode_cache.get(cache_key)
+                    cache_hit = encoded is not None
+                    if cache_hit:
+                        encode_cache_hits += 1
+                    else:
+                        encoded = engine.encode_prompt(
+                            str(case.path),
+                            duration=candidate.ref_duration,
+                            rms=candidate.rms,
+                            prompt_text=case.prompt_text,
+                            offset=candidate.prompt_start,
+                            fade_ms=candidate.prompt_fade_ms,
+                            trim_silence=candidate.trim_silence,
+                            silence_threshold_db=candidate.silence_threshold_db,
+                            keep_silence_ms=candidate.keep_silence_ms,
+                            rms_min=candidate.rms_min,
+                            rms_max=candidate.rms_max,
+                        )
+                        encode_cache[cache_key] = encoded
+                        encode_cache_misses += 1
+                    encode_elapsed = time.perf_counter() - encode_t0
 
+                    gen_t0 = time.perf_counter()
                     wav = engine.generate_speech(
                         target_text,
                         encoded,
@@ -608,6 +843,7 @@ def main() -> None:
                         return_smooth=candidate.return_smooth,
                         duration_pad_frames=candidate.duration_pad_frames,
                     )
+                    gen_elapsed = time.perf_counter() - gen_t0
                     wav_np = _wav_to_numpy(wav)
 
                     metrics, hyp_text = _evaluate_quality(wav_np, target_text, asr_pipe)
@@ -623,6 +859,12 @@ def main() -> None:
                         "params": asdict(candidate),
                         "metrics": metrics,
                         "score": score,
+                        "timing_sec": {
+                            "encode": float(encode_elapsed),
+                            "generate": float(gen_elapsed),
+                            "total": float(encode_elapsed + gen_elapsed),
+                        },
+                        "encode_cache_hit": cache_hit,
                     }
                     if args.keep_asr_text:
                         record["asr_text"] = hyp_text
@@ -648,14 +890,15 @@ def main() -> None:
 
             best = best_record
             best_metrics = best["metrics"]
-            if args.compact_report:
+            round_report: dict[str, Any] | None = None
+            if round_history == "best":
                 round_report = {
                     "round": round_idx,
                     "seed_params": asdict(params),
                     "candidate_count": len(param_candidates),
                     "best": _serialize_candidate(best, keep_asr_text=args.keep_asr_text),
                 }
-            else:
+            elif round_history == "all":
                 round_report = {
                     "round": round_idx,
                     "seed_params": asdict(params),
@@ -668,7 +911,8 @@ def main() -> None:
                     "best_candidate_index": best.get("candidate_index"),
                     "best_score": best["score"],
                 }
-            rounds.append(round_report)
+            if round_report is not None:
+                rounds.append(round_report)
             last_best_record = dict(best)
             last_best_wav = best_wav
 
@@ -696,20 +940,31 @@ def main() -> None:
             "case_name": case.name,
             "prompt_path": str(case.path),
             "prompt_text": case.prompt_text,
-            "rounds_run": len(rounds),
+            "prompt_text_source": case.prompt_text_source,
+            "rounds_run": rounds_run,
             "passed": passed,
             "final_choice": final_choice,
             "rounds": rounds,
+            "perf": {
+                "encode_cache_hits": encode_cache_hits,
+                "encode_cache_misses": encode_cache_misses,
+                "encode_cache_hit_rate": (
+                    float(encode_cache_hits / max(1, encode_cache_hits + encode_cache_misses))
+                ),
+            },
             "storage": {
                 "keep_wavs": args.keep_wavs,
                 "compact_report": args.compact_report,
+                "round_history": round_history,
                 "keep_asr_text": args.keep_asr_text,
+                "write_case_reports": args.write_case_reports,
             },
         }
         prompt_reports.append(report)
 
-        case_json = case_dir / "report.json"
-        case_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        if args.write_case_reports:
+            case_json = case_dir / "report.json"
+            case_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     full_report = {
         "target_text": target_text,
@@ -718,7 +973,9 @@ def main() -> None:
         "storage": {
             "keep_wavs": args.keep_wavs,
             "compact_report": args.compact_report,
+            "round_history": round_history,
             "keep_asr_text": args.keep_asr_text,
+            "write_case_reports": args.write_case_reports,
         },
         "cases": prompt_reports,
     }

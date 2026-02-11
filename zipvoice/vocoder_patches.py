@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import torch
 
@@ -60,5 +62,14 @@ def apply_linacodec_linkwitz_patch() -> None:
 
     linkwitz_mod.crossover_merge_linkwitz_riley = _crossover_merge_linkwitz_riley_safe
     vocos_mod.crossover_merge_linkwitz_riley = _crossover_merge_linkwitz_riley_safe
-    _PATCHED_LINKWITZ = True
 
+    # Patch any already-imported linacodec vocoder modules that may have copied
+    # the symbol via "from ... import crossover_merge_linkwitz_riley".
+    for module in list(sys.modules.values()):
+        module_name = getattr(module, "__name__", "")
+        if not module_name.startswith("linacodec.vocoder"):
+            continue
+        if hasattr(module, "crossover_merge_linkwitz_riley"):
+            setattr(module, "crossover_merge_linkwitz_riley", _crossover_merge_linkwitz_riley_safe)
+
+    _PATCHED_LINKWITZ = True
