@@ -196,7 +196,7 @@ def generate_mlx(
     guidance_scale=3.0,
     speed=0.92,
     t_shift=0.5,
-    target_rms=0.1,
+    target_rms=0.01,
     duration_pad_frames=16,
 ):
     tokens = tokenizer.texts_to_token_ids([text])

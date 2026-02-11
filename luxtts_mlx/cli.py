@@ -84,8 +84,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--num-steps",
         type=int,
-        default=4,
-        help="Sampling steps (default: 4).",
+        default=5,
+        help="Sampling steps (default: 5).",
     )
     parser.add_argument(
         "--guidance-scale",
@@ -125,6 +125,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=180,
         help="Silence to append in milliseconds (default: 180).",
+    )
+    parser.add_argument(
+        "--output-peak",
+        type=float,
+        default=0.92,
+        help=(
+            "Normalize output peak to this value for louder playback "
+            "(default: 0.92, set <=0 to disable)."
+        ),
     )
     parser.add_argument(
         "--rms",
@@ -248,6 +257,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {ex}", file=sys.stderr)
         return 2
     wav_np = np.array(wav).squeeze()
+    if np.issubdtype(wav_np.dtype, np.integer):
+        i = np.iinfo(wav_np.dtype)
+        denom = float(max(abs(i.min), i.max))
+        wav_np = wav_np.astype(np.float32) / denom
+    else:
+        wav_np = wav_np.astype(np.float32, copy=False)
     if wav_np.ndim != 1:
         wav_np = wav_np.reshape(-1)
 
@@ -258,6 +273,12 @@ def main(argv: list[str] | None = None) -> int:
         wav_np = np.concatenate([np.zeros(lead_samples, dtype=wav_np.dtype), wav_np])
     if tail_samples > 0:
         wav_np = np.concatenate([wav_np, np.zeros(tail_samples, dtype=wav_np.dtype)])
+
+    if args.output_peak > 0 and wav_np.size > 0:
+        peak = float(np.max(np.abs(wav_np)))
+        if peak > 1.0e-6 and peak < args.output_peak:
+            gain = min(args.output_peak / peak, 12.0)
+            wav_np = np.clip(wav_np * gain, -1.0, 1.0)
 
     sf.write(out_path, wav_np, sample_rate)
     print(f"Wrote {out_path}")

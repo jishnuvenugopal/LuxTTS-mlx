@@ -143,7 +143,8 @@ luxtts-mlx "Hello from MLX!" --out output.wav --device mlx
 ```
 
 Use `--no-return-smooth` if you want the sharper 48k path.
-Defaults are tuned for clarity: `--speed 0.92` and `--duration-pad-frames 16`.
+Defaults are tuned for clarity: `--num-steps 5`, `--speed 0.92`, `--duration-pad-frames 16`.
+Default output peak normalization is enabled: `--output-peak 0.92` (set `--output-peak 0` to disable).
 
 #### CLI with prompt + optional prompt text
 ```

@@ -103,9 +103,16 @@ class LuxTTS:
                 "prompt_features_lens": np.array(prompt_features_lens, dtype=np.int64),
                 "prompt_features": np.array(prompt_features, dtype=np.float32),
                 "prompt_rms": float(prompt_rms),
+                "target_rms": float(rms),
             }
         else:
-            encode_dict = {"prompt_tokens": prompt_tokens, 'prompt_features_lens': prompt_features_lens, 'prompt_features': prompt_features, 'prompt_rms': prompt_rms}
+            encode_dict = {
+                "prompt_tokens": prompt_tokens,
+                "prompt_features_lens": prompt_features_lens,
+                "prompt_features": prompt_features,
+                "prompt_rms": prompt_rms,
+                "target_rms": float(rms),
+            }
 
         return encode_dict
 
@@ -113,7 +120,7 @@ class LuxTTS:
         self,
         text,
         encode_dict,
-        num_steps=4,
+        num_steps=5,
         guidance_scale=3.0,
         t_shift=0.5,
         speed=0.92,
@@ -122,7 +129,11 @@ class LuxTTS:
     ):
         """encodes text and generates speech using flow matching model according to steps, guidance scale, and t_shift(like temp)"""
 
-        prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = encode_dict.values()
+        prompt_tokens = encode_dict["prompt_tokens"]
+        prompt_features_lens = encode_dict["prompt_features_lens"]
+        prompt_features = encode_dict["prompt_features"]
+        prompt_rms = encode_dict["prompt_rms"]
+        target_rms = float(encode_dict.get("target_rms", 0.01))
 
         if hasattr(self.vocos, "return_48k"):
             if return_smooth == True:
@@ -144,10 +155,25 @@ class LuxTTS:
                 guidance_scale=guidance_scale,
                 t_shift=t_shift,
                 speed=speed,
+                target_rms=target_rms,
                 duration_pad_frames=duration_pad_frames,
             )
         elif self.device == 'cpu':
-            final_wav = generate_cpu(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
+            final_wav = generate_cpu(
+                prompt_tokens,
+                prompt_features_lens,
+                prompt_features,
+                prompt_rms,
+                text,
+                self.model,
+                self.vocos,
+                self.tokenizer,
+                num_step=num_steps,
+                guidance_scale=guidance_scale,
+                t_shift=t_shift,
+                speed=speed,
+                target_rms=target_rms,
+            )
         else:
             final_wav = generate(
                 prompt_tokens,
@@ -162,6 +188,7 @@ class LuxTTS:
                 guidance_scale=guidance_scale,
                 t_shift=t_shift,
                 speed=speed,
+                target_rms=target_rms,
                 duration_pad_frames=duration_pad_frames,
             )
 

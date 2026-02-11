@@ -1,5 +1,6 @@
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 import torch
 import yaml
 
@@ -12,20 +13,69 @@ def _nonlinearity(x: mx.array) -> mx.array:
     return x * mx.sigmoid(x)
 
 
-def _upsample_by_2_linear(audio: mx.array) -> mx.array:
-    """Upsample by 2x with linear interpolation, avoiding FFT kernels."""
-    n = int(audio.shape[-1])
-    if n <= 1:
-        return mx.concatenate([audio, audio], axis=-1)
+def _fft_resample_np(audio: mx.array, src_sr: int, dst_sr: int) -> mx.array:
+    if src_sr == dst_sr:
+        return audio
+    audio_np = np.array(audio, dtype=np.float32)
+    n = int(audio_np.shape[-1])
+    new_n = int(round(n * dst_sr / src_sr))
+    if new_n <= 1 or new_n == n:
+        return mx.array(audio_np)
 
-    left = audio[..., :-1]
-    right = audio[..., 1:]
-    mid = (left + right) * 0.5
+    spec = np.fft.rfft(audio_np, axis=-1)
+    old_spec_len = spec.shape[-1]
+    new_spec_len = new_n // 2 + 1
 
-    pairs = mx.stack([left, mid], axis=-1)
-    out = mx.reshape(pairs, pairs.shape[:-2] + (pairs.shape[-2] * 2,))
-    tail = mx.concatenate([audio[..., -1:], audio[..., -1:]], axis=-1)
-    return mx.concatenate([out, tail], axis=-1)
+    if new_spec_len > old_spec_len:
+        pad_shape = list(spec.shape)
+        pad_shape[-1] = new_spec_len - old_spec_len
+        spec = np.concatenate([spec, np.zeros(pad_shape, dtype=spec.dtype)], axis=-1)
+    elif new_spec_len < old_spec_len:
+        spec = spec[..., :new_spec_len]
+
+    result = np.fft.irfft(spec, n=new_n, axis=-1).astype(np.float32)
+    result *= float(new_n) / float(n)
+    return mx.array(result)
+
+
+def _crossover_merge_linkwitz_riley_np(
+    path1_48k: mx.array,
+    path2_48k: mx.array,
+    sample_rate: int = 48000,
+    cutoff: int = 4000,
+    transition_bins: int = 8,
+) -> mx.array:
+    path1_np = np.array(path1_48k, dtype=np.float32)
+    path2_np = np.array(path2_48k, dtype=np.float32)
+
+    spec1 = np.fft.rfft(path1_np, axis=-1)
+    spec2 = np.fft.rfft(path2_np, axis=-1)
+
+    n_bins = spec1.shape[-1]
+    cutoff_bin = int((cutoff / (sample_rate / 2)) * n_bins)
+
+    mask = np.ones((n_bins,), dtype=np.float32)
+    half = transition_bins // 2
+    start = max(0, cutoff_bin - half)
+    end = min(n_bins, cutoff_bin + half)
+    actual_width = end - start
+
+    if actual_width > 0:
+        t = np.linspace(0.0, 1.0, actual_width, dtype=np.float32)
+        fade = t * t * (3.0 - 2.0 * t)
+        mask = np.concatenate(
+            [
+                np.zeros((start,), dtype=np.float32),
+                fade,
+                np.ones((n_bins - end,), dtype=np.float32),
+            ]
+        )
+
+    mask_shape = (1,) * (spec1.ndim - 1) + (n_bins,)
+    mask = mask.reshape(mask_shape)
+    merged_spec = (spec1 * mask) + (spec2 * (1.0 - mask))
+    merged = np.fft.irfft(merged_spec, n=path1_np.shape[-1], axis=-1).astype(np.float32)
+    return mx.array(merged)
 
 
 class Snake1d(nn.Module):
@@ -167,7 +217,9 @@ class LuxVocoderMLX(nn.Module):
         features = self.backbone(features_input)
         pred_audio_24k = self.head(features)
         pred_audio_24k = mx.clip(pred_audio_24k, -1.0, 1.0)
-        pred_audio_24k_up = _upsample_by_2_linear(pred_audio_24k)
+        pred_audio_24k_up = _fft_resample_np(
+            pred_audio_24k, self.sample_rate, self.sample_rate * 2
+        )
 
         if not self.return_48k:
             return pred_audio_24k_up
@@ -180,8 +232,12 @@ class LuxVocoderMLX(nn.Module):
         pred_audio_48k = pred_audio_48k[..., :min_len]
         pred_audio_24k_up = pred_audio_24k_up[..., :min_len]
 
-        # Stable time-domain blend between high-band 48k path and smoother 24k path.
-        merged = pred_audio_48k * 0.65 + pred_audio_24k_up * 0.35
+        merged = _crossover_merge_linkwitz_riley_np(
+            pred_audio_48k,
+            pred_audio_24k_up,
+            sample_rate=self.sample_rate * 2,
+            cutoff=self.freq_range,
+        )
         return mx.clip(merged, -1.0, 1.0)
 
 
