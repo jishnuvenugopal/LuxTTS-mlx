@@ -102,16 +102,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--speed",
         type=float,
-        default=1.0,
-        help="Speech speed factor (default: 1.0).",
+        default=0.92,
+        help="Speech speed factor (default: 0.92).",
     )
     parser.add_argument(
         "--duration-pad-frames",
         type=int,
-        default=10,
+        default=16,
         help=(
             "Extra acoustic frames appended to predicted duration to avoid clipped "
-            "final syllables (default: 10)."
+            "final syllables (default: 16)."
         ),
     )
     parser.add_argument(

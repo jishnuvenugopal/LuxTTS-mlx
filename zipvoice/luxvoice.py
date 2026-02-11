@@ -110,9 +110,9 @@ class LuxTTS:
         num_steps=4,
         guidance_scale=3.0,
         t_shift=0.5,
-        speed=1.0,
+        speed=0.92,
         return_smooth=True,
-        duration_pad_frames=10,
+        duration_pad_frames=16,
     ):
         """encodes text and generates speech using flow matching model according to steps, guidance scale, and t_shift(like temp)"""
 
