@@ -12,20 +12,39 @@ def _nonlinearity(x: mx.array) -> mx.array:
     return x * mx.sigmoid(x)
 
 
-def _linear_resample(audio: mx.array, src_sr: int, dst_sr: int) -> mx.array:
+def _fft_resample(audio: mx.array, src_sr: int, dst_sr: int) -> mx.array:
+    """Resample audio using FFT zero-padding (equivalent to sinc interpolation).
+
+    For upsampling, this zero-pads the spectrum and inverse-transforms,
+    giving band-limited interpolation that matches torchaudio.functional.resample
+    quality.  For the 24 kHz -> 48 kHz case used by the vocoder this is exact.
+    """
     if src_sr == dst_sr:
         return audio
-    length = audio.shape[-1]
-    new_length = int(round(length * float(dst_sr) / float(src_sr)))
-    pos = mx.linspace(0, length - 1, new_length)
-    idx0 = mx.floor(pos).astype(mx.int64)
-    idx1 = mx.minimum(idx0 + 1, length - 1)
-    w = pos - idx0
-    while w.ndim < audio.ndim:
-        w = mx.expand_dims(w, axis=0)
-    a0 = mx.take(audio, idx0, axis=-1)
-    a1 = mx.take(audio, idx1, axis=-1)
-    return (1.0 - w) * a0 + w * a1
+    n = audio.shape[-1]
+    new_n = int(round(n * dst_sr / src_sr))
+    if new_n == n:
+        return audio
+
+    spec = mx.fft.rfft(audio)
+    old_spec_len = spec.shape[-1]
+    new_spec_len = new_n // 2 + 1
+
+    if new_spec_len > old_spec_len:
+        # Upsampling: zero-pad the spectrum
+        pad_shape = list(spec.shape)
+        pad_shape[-1] = new_spec_len - old_spec_len
+        spec = mx.concatenate(
+            [spec, mx.zeros(pad_shape, dtype=spec.dtype)], axis=-1
+        )
+    elif new_spec_len < old_spec_len:
+        # Downsampling: truncate the spectrum
+        spec = spec[..., :new_spec_len]
+
+    result = mx.fft.irfft(spec, n=new_n)
+    # Scale to preserve amplitude (irfft normalization differs with length)
+    result = result * (float(new_n) / float(n))
+    return result
 
 
 def _crossover_merge_linkwitz_riley(
@@ -41,7 +60,7 @@ def _crossover_merge_linkwitz_riley(
     n_bins = spec1.shape[-1]
     cutoff_bin = int((cutoff / (sample_rate / 2)) * n_bins)
 
-    mask = mx.ones((n_bins,), dtype=spec1.dtype)
+    mask = mx.ones((n_bins,), dtype=mx.float32)
     half = transition_bins // 2
     start = max(0, cutoff_bin - half)
     end = min(n_bins, cutoff_bin + half)
@@ -52,9 +71,9 @@ def _crossover_merge_linkwitz_riley(
         fade = 3 * mx.power((x + 1) / 2, 2) - 2 * mx.power((x + 1) / 2, 3)
         mask = mx.concatenate(
             [
-                mx.zeros((start,), dtype=mask.dtype),
+                mx.zeros((start,), dtype=mx.float32),
                 fade,
-                mx.ones((n_bins - end,), dtype=mask.dtype),
+                mx.ones((n_bins - end,), dtype=mx.float32),
             ]
         )
 
@@ -202,7 +221,8 @@ class LuxVocoderMLX(nn.Module):
         upsampled = self.upsampler(features)
         pred_audio = self.head_48k(upsampled)
         pred_audio2 = self.head(features)
-        pred_audio2 = _linear_resample(pred_audio2, self.sample_rate, self.sample_rate * 2)
+        pred_audio2 = _fft_resample(pred_audio2, self.sample_rate, self.sample_rate * 2)
+        # Align lengths before crossover merge
         min_len = min(pred_audio.shape[-1], pred_audio2.shape[-1])
         pred_audio = pred_audio[..., :min_len]
         pred_audio2 = pred_audio2[..., :min_len]
