@@ -48,3 +48,4 @@
 4. Expand to multi-voice smoke tests after single-voice quality is stable.
 5. Use `tools/feedback_loop.py` for automated multi-round Torch-vs-MLX tuning.
 6. Loop now explores multiple parameter candidates per round and penalizes repetition artifacts.
+7. Use storage-safe defaults for long runs (`--keep-wavs final --compact-report`).

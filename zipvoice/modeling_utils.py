@@ -28,6 +28,7 @@ from typing import Optional, List
 from linacodec.vocoder.vocos import Vocos
 from zipvoice.onnx_modeling import OnnxModel
 from torch.nn.utils import parametrize
+from zipvoice.vocoder_patches import apply_linacodec_linkwitz_patch
 
 
 @dataclass
@@ -242,6 +243,7 @@ def load_models_gpu(model_path=None, device="cuda"):
     model = model.to(params.device).eval()
     feature_extractor = VocosFbank()
 
+    apply_linacodec_linkwitz_patch()
     vocos = Vocos.from_hparams(f'{model_path}/vocoder/config.yaml').to(device)
     parametrize.remove_parametrizations(vocos.upsampler.upsample_layers[0], "weight")
     parametrize.remove_parametrizations(vocos.upsampler.upsample_layers[1], "weight")
@@ -285,6 +287,7 @@ def load_models_cpu(model_path = None, num_thread=2):
 
     model = OnnxModel(text_encoder_path, fm_decoder_path, num_thread=num_thread)
 
+    apply_linacodec_linkwitz_patch()
     vocos = Vocos.from_hparams(f'{model_path}/vocoder/config.yaml').eval()
     parametrize.remove_parametrizations(vocos.upsampler.upsample_layers[0], "weight")
     parametrize.remove_parametrizations(vocos.upsampler.upsample_layers[1], "weight")

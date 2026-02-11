@@ -180,14 +180,20 @@ Use this to auto-run multi-round quality checks, compare backends, and tune para
   --vocoder-set both \
   --max-rounds 4 \
   --max-candidates-per-round 10 \
+  --keep-wavs final \
+  --compact-report \
   --out-dir feedback-loop-runs
 ```
 
 Outputs:
-- Per-prompt WAVs for each round/backend.
+- Storage-optimized by default:
+  - only final best WAV per prompt (`--keep-wavs final`)
+  - compact JSON (no huge per-candidate dumps)
 - Per-prompt JSON reports.
 - Aggregate summary: `feedback-loop-runs/SUMMARY.md`.
 - Uses ASR similarity + start/tail artifact ratios + repetition ratio to pick winners.
+
+If you need full debug artifacts, use `--keep-wavs all --no-compact-report --keep-asr-text`.
 
   
 ## Info

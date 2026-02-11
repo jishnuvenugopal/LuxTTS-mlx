@@ -13,6 +13,7 @@ from zipvoice.tokenizer.tokenizer import EmiliaTokenizer
 
 from torch.nn.utils import parametrize
 from linacodec.vocoder.vocos import Vocos
+from zipvoice.vocoder_patches import apply_linacodec_linkwitz_patch
 
 def _synth_prompt(duration: float, sample_rate: int) -> np.ndarray:
     length = max(1, int(duration * sample_rate))
@@ -88,6 +89,7 @@ def _load_torch_state_dict(model_ckpt: str):
 
 
 def load_vocoder_torch(model_path: str, device: str = "cpu"):
+    apply_linacodec_linkwitz_patch()
     vocos = Vocos.from_hparams(f"{model_path}/vocoder/config.yaml").to(device).eval()
     for layer in getattr(vocos.upsampler, "upsample_layers", []):
         try:

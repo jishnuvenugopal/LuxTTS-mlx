@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import re
+import shutil
 from dataclasses import asdict, dataclass, replace
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -252,6 +253,20 @@ def _wav_to_numpy(wav_obj) -> np.ndarray:
     return np.asarray(wav_obj, dtype=np.float32).reshape(-1)
 
 
+def _serialize_candidate(record: dict[str, Any], keep_asr_text: bool) -> dict[str, Any]:
+    out = {
+        "candidate_index": record.get("candidate_index"),
+        "backend": record["backend"],
+        "output_wav": record.get("output_wav"),
+        "params": record["params"],
+        "metrics": record["metrics"],
+        "score": record["score"],
+    }
+    if keep_asr_text:
+        out["asr_text"] = record.get("asr_text", "")
+    return out
+
+
 def _params_key(params: SynthesisParams) -> tuple[Any, ...]:
     return (
         params.num_steps,
@@ -449,6 +464,30 @@ def main() -> None:
     parser.add_argument("--max-rounds", type=int, default=4, help="Maximum tuning rounds per prompt.")
     parser.add_argument("--max-candidates-per-round", type=int, default=10, help="Parameter candidates explored each round.")
     parser.add_argument("--out-dir", default="feedback-loop-runs", help="Output directory.")
+    parser.add_argument(
+        "--keep-wavs",
+        choices=["none", "final", "best-round", "all"],
+        default="final",
+        help="Storage policy for generated wavs (default: final).",
+    )
+    parser.add_argument(
+        "--compact-report",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Store compact JSON report (default: true).",
+    )
+    parser.add_argument(
+        "--keep-asr-text",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Include raw ASR transcript text in JSON report (default: false).",
+    )
+    parser.add_argument(
+        "--clean-out-dir",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Delete existing output directory before running (default: false).",
+    )
 
     parser.add_argument("--min-asr-sim", type=float, default=0.78)
     parser.add_argument("--max-start-ratio", type=float, default=0.45)
@@ -461,6 +500,8 @@ def main() -> None:
     from luxtts_mlx import LuxTTS
 
     out_dir = Path(args.out_dir).expanduser().resolve()
+    if args.clean_out_dir and out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     thresholds = QualityThresholds(
@@ -508,6 +549,8 @@ def main() -> None:
     for case in cases:
         print(f"\n=== Case: {case.name} ({case.path}) ===")
         case_dir = out_dir / case.name
+        if case_dir.exists():
+            shutil.rmtree(case_dir)
         case_dir.mkdir(parents=True, exist_ok=True)
         prompt_duration = _prompt_duration_seconds(case.path)
 
@@ -515,6 +558,8 @@ def main() -> None:
         rounds: list[dict[str, Any]] = []
         passed = False
         last_best_metrics: dict[str, float | None] | None = None
+        last_best_record: dict[str, Any] | None = None
+        last_best_wav: np.ndarray | None = None
 
         for round_idx in range(1, args.max_rounds + 1):
             param_candidates = _candidate_variants(
@@ -530,6 +575,9 @@ def main() -> None:
                 f"Round {round_idx}: testing {len(param_candidates)} param candidates "
                 f"x {len(engines)} backend(s)"
             )
+
+            best_record: dict[str, Any] | None = None
+            best_wav: np.ndarray | None = None
 
             for cand_idx, candidate in enumerate(param_candidates, start=1):
                 for backend_name, engine in engines.items():
@@ -561,19 +609,23 @@ def main() -> None:
                         duration_pad_frames=candidate.duration_pad_frames,
                     )
                     wav_np = _wav_to_numpy(wav)
-                    sf.write(out_wav, wav_np, 48000)
 
                     metrics, hyp_text = _evaluate_quality(wav_np, target_text, asr_pipe)
                     score = _score_run(metrics)
+                    output_wav = None
+                    if args.keep_wavs == "all":
+                        sf.write(out_wav, wav_np, 48000)
+                        output_wav = str(out_wav)
                     record = {
                         "candidate_index": cand_idx,
                         "backend": backend_name,
-                        "output_wav": str(out_wav),
+                        "output_wav": output_wav,
                         "params": asdict(candidate),
                         "metrics": metrics,
                         "score": score,
-                        "asr_text": hyp_text,
                     }
+                    if args.keep_asr_text:
+                        record["asr_text"] = hyp_text
                     per_round.append(record)
                     print(
                         f"  cand={cand_idx:02d} {backend_name:>5} score={score:.3f} "
@@ -582,18 +634,43 @@ def main() -> None:
                         f"clip={metrics['clip_frac']:.4f}"
                     )
 
-            best = max(per_round, key=lambda x: x["score"])
+                    if best_record is None or score > best_record["score"]:
+                        best_record = record
+                        best_wav = wav_np
+
+            if best_record is None:
+                raise RuntimeError("No candidates evaluated in this round.")
+
+            if args.keep_wavs == "best-round" and best_wav is not None:
+                best_round_wav = case_dir / f"round{round_idx:02d}_best_{best_record['backend']}.wav"
+                sf.write(best_round_wav, best_wav, 48000)
+                best_record["output_wav"] = str(best_round_wav)
+
+            best = best_record
             best_metrics = best["metrics"]
-            round_report = {
-                "round": round_idx,
-                "seed_params": asdict(params),
-                "candidate_count": len(param_candidates),
-                "candidates": per_round,
-                "best_backend": best["backend"],
-                "best_candidate_index": best.get("candidate_index"),
-                "best_score": best["score"],
-            }
+            if args.compact_report:
+                round_report = {
+                    "round": round_idx,
+                    "seed_params": asdict(params),
+                    "candidate_count": len(param_candidates),
+                    "best": _serialize_candidate(best, keep_asr_text=args.keep_asr_text),
+                }
+            else:
+                round_report = {
+                    "round": round_idx,
+                    "seed_params": asdict(params),
+                    "candidate_count": len(param_candidates),
+                    "candidates": [
+                        _serialize_candidate(rec, keep_asr_text=args.keep_asr_text)
+                        for rec in sorted(per_round, key=lambda x: x["score"], reverse=True)
+                    ],
+                    "best_backend": best["backend"],
+                    "best_candidate_index": best.get("candidate_index"),
+                    "best_score": best["score"],
+                }
             rounds.append(round_report)
+            last_best_record = dict(best)
+            last_best_wav = best_wav
 
             if _passes_thresholds(best_metrics, thresholds):
                 passed = True
@@ -604,7 +681,17 @@ def main() -> None:
             last_best_metrics = best_metrics
             print("  -> thresholds not met, best candidate becomes next seed params.")
 
-        final_choice = max(rounds[-1]["candidates"], key=lambda x: x["score"])
+        if last_best_record is None:
+            raise RuntimeError("No final choice available.")
+
+        if args.keep_wavs == "final" and last_best_wav is not None:
+            final_wav_path = case_dir / f"final_best_{last_best_record['backend']}.wav"
+            sf.write(final_wav_path, last_best_wav, 48000)
+            last_best_record["output_wav"] = str(final_wav_path)
+        elif args.keep_wavs == "none":
+            last_best_record["output_wav"] = None
+
+        final_choice = _serialize_candidate(last_best_record, keep_asr_text=args.keep_asr_text)
         report = {
             "case_name": case.name,
             "prompt_path": str(case.path),
@@ -613,6 +700,11 @@ def main() -> None:
             "passed": passed,
             "final_choice": final_choice,
             "rounds": rounds,
+            "storage": {
+                "keep_wavs": args.keep_wavs,
+                "compact_report": args.compact_report,
+                "keep_asr_text": args.keep_asr_text,
+            },
         }
         prompt_reports.append(report)
 
@@ -623,6 +715,11 @@ def main() -> None:
         "target_text": target_text,
         "thresholds": asdict(thresholds),
         "out_dir": str(out_dir),
+        "storage": {
+            "keep_wavs": args.keep_wavs,
+            "compact_report": args.compact_report,
+            "keep_asr_text": args.keep_asr_text,
+        },
         "cases": prompt_reports,
     }
     (out_dir / "report.json").write_text(json.dumps(full_report, indent=2), encoding="utf-8")
