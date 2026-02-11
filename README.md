@@ -151,6 +151,8 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wa
 luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "Hello." --out output.wav --device mlx
 ```
 
+Tip: providing `--prompt-text` skips Whisper prompt transcription load, which is faster and avoids extra multiprocessing warnings.
+
 #### Debug: use torch vocoder with MLX diffusion
 ```
 luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder torch

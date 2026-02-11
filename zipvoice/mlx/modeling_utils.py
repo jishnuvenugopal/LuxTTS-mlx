@@ -45,11 +45,21 @@ def load_vocoder_torch(model_path: str, device: str = "cpu"):
     return vocos
 
 
+def load_transcriber_mlx():
+    torch_device = "mps" if torch.backends.mps.is_available() else "cpu"
+    return pipeline(
+        "automatic-speech-recognition",
+        model="openai/whisper-base",
+        device=0 if torch_device == "mps" else -1,
+    )
+
+
 def load_models_mlx(
     model_path: Optional[str] = None,
     device: str = "cpu",
     vocoder_backend: str = "mlx",
     vocoder_device: Optional[str] = None,
+    load_transcriber: bool = False,
 ):
     if model_path is None:
         model_path = snapshot_download("YatharthS/LuxTTS")
@@ -59,12 +69,7 @@ def load_models_mlx(
     model_ckpt = f"{model_path}/model.pt"
     model_config = f"{model_path}/config.json"
 
-    torch_device = "mps" if torch.backends.mps.is_available() else "cpu"
-    transcriber = pipeline(
-        "automatic-speech-recognition",
-        model="openai/whisper-base",
-        device=0 if torch_device == "mps" else -1,
-    )
+    transcriber = load_transcriber_mlx() if load_transcriber else None
 
     tokenizer = EmiliaTokenizer(token_file=token_file)
     tokenizer_config = {"vocab_size": tokenizer.vocab_size, "pad_id": tokenizer.pad_id}
@@ -115,6 +120,10 @@ def process_audio_mlx(
         prompt_wav, _sr = librosa.load(audio, sr=24000, duration=duration)
         if not prompt_text:
             prompt_wav2, _sr2 = librosa.load(audio, sr=16000, duration=duration)
+            if transcriber is None:
+                raise RuntimeError(
+                    "Prompt transcription is unavailable. Pass --prompt-text or provide a transcriber."
+                )
             prompt_text = transcriber(prompt_wav2)["text"]
             print(prompt_text)
 

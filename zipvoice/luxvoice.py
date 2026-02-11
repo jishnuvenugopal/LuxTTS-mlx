@@ -23,6 +23,7 @@ class LuxTTS:
                 from zipvoice.mlx.modeling_utils import (
                     generate_mlx,
                     load_models_mlx,
+                    load_transcriber_mlx,
                     process_audio_mlx,
                 )
             except Exception as ex:
@@ -31,6 +32,7 @@ class LuxTTS:
                 model_path,
                 vocoder_backend=vocoder_backend,
                 vocoder_device=vocoder_device,
+                load_transcriber=False,
             )
             print("Loading model on MLX")
 
@@ -42,6 +44,7 @@ class LuxTTS:
             self.device = device
             self._generate_mlx = generate_mlx
             self._process_audio = process_audio_mlx
+            self._load_transcriber = load_transcriber_mlx
             return
 
         from zipvoice.modeling_utils import (
@@ -80,6 +83,8 @@ class LuxTTS:
 
     def encode_prompt(self, prompt_audio=None, duration=5, rms=0.001, prompt_text=None):
         """encodes audio prompt according to duration and rms(volume control)"""
+        if self.device == "mlx" and prompt_audio is not None and not prompt_text and self.transcriber is None:
+            self.transcriber = self._load_transcriber()
         device = "cpu" if self.device == "mlx" else self.device
         prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = self._process_audio(
             prompt_audio,
