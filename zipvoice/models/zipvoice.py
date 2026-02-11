@@ -293,6 +293,7 @@ class ZipVoice(nn.Module):
         prompt_tokens: List[List[int]],
         prompt_features_lens: torch.Tensor,
         speed: float,
+        duration_pad_frames: int = 0,
     ):
         """
         Process text for inference, given text tokens and prompts,
@@ -320,9 +321,12 @@ class ZipVoice(nn.Module):
 
         cat_embed, cat_tokens_lens = self.forward_text_embed(cat_tokens)
 
+        duration_pad_frames = max(int(duration_pad_frames), 0)
         features_lens = prompt_features_lens + torch.ceil(
             (prompt_features_lens / prompt_tokens_lens * tokens_lens / speed)
         ).to(dtype=torch.int64)
+        if duration_pad_frames > 0:
+            features_lens = features_lens + duration_pad_frames
 
         text_condition, padding_mask = self.forward_text_condition(
             cat_embed, cat_tokens_lens, features_lens
@@ -393,6 +397,7 @@ class ZipVoice(nn.Module):
         prompt_features_lens: torch.Tensor,
         features_lens: Optional[torch.Tensor] = None,
         speed: float = 1.0,
+        duration_pad_frames: int = 0,
         t_shift: float = 1.0,
         duration: str = "predict",
         num_step: int = 5,
@@ -427,6 +432,7 @@ class ZipVoice(nn.Module):
                 prompt_tokens=prompt_tokens,
                 prompt_features_lens=prompt_features_lens,
                 speed=speed,
+                duration_pad_frames=duration_pad_frames,
             )
         else:
             assert features_lens is not None

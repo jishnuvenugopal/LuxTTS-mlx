@@ -145,6 +145,7 @@ class ZipVoiceMLX(nn.Module):
         prompt_tokens: List[List[int]],
         prompt_features_lens: mx.array,
         speed: float,
+        duration_pad_frames: int = 0,
     ):
         cat_tokens = [prompt_token + token for prompt_token, token in zip(prompt_tokens, tokens)]
         prompt_tokens_lens = mx.array([len(token) for token in prompt_tokens], dtype=mx.int64)
@@ -154,9 +155,12 @@ class ZipVoiceMLX(nn.Module):
         tokens_lens = mx.maximum(tokens_lens, one)
 
         cat_embed, cat_tokens_lens = self.forward_text_embed(cat_tokens)
+        duration_pad_frames = max(int(duration_pad_frames), 0)
         features_lens = prompt_features_lens + mx.ceil(
             prompt_features_lens / prompt_tokens_lens * tokens_lens / speed
         ).astype(mx.int64)
+        if duration_pad_frames > 0:
+            features_lens = features_lens + duration_pad_frames
 
         return self.forward_text_condition(cat_embed, cat_tokens_lens, features_lens)
 
@@ -168,6 +172,7 @@ class ZipVoiceMLX(nn.Module):
         prompt_features_lens: mx.array,
         features_lens: Optional[mx.array] = None,
         speed: float = 1.0,
+        duration_pad_frames: int = 0,
         t_shift: float = 1.0,
         duration: str = "predict",
         num_step: int = 5,
@@ -182,6 +187,7 @@ class ZipVoiceMLX(nn.Module):
                 prompt_tokens=prompt_tokens,
                 prompt_features_lens=prompt_features_lens,
                 speed=speed,
+                duration_pad_frames=duration_pad_frames,
             )
         else:
             if features_lens is None:

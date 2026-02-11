@@ -150,6 +150,7 @@ def generate_mlx(
     speed=1.0,
     t_shift=0.5,
     target_rms=0.1,
+    duration_pad_frames=10,
 ):
     tokens = tokenizer.texts_to_token_ids([text])
 
@@ -162,6 +163,7 @@ def generate_mlx(
         prompt_features=prompt_features,
         prompt_features_lens=prompt_features_lens,
         speed=speed,
+        duration_pad_frames=duration_pad_frames,
         t_shift=t_shift,
         duration="predict",
         num_step=num_step,

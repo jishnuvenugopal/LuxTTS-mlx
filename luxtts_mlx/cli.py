@@ -106,6 +106,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Speech speed factor (default: 1.0).",
     )
     parser.add_argument(
+        "--duration-pad-frames",
+        type=int,
+        default=10,
+        help=(
+            "Extra acoustic frames appended to predicted duration to avoid clipped "
+            "final syllables (default: 10)."
+        ),
+    )
+    parser.add_argument(
         "--lead-silence-ms",
         type=int,
         default=120,
@@ -228,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
             t_shift=args.t_shift,
             speed=args.speed,
             return_smooth=args.return_smooth,
+            duration_pad_frames=args.duration_pad_frames,
         )
     except RuntimeError as ex:
         print(f"Error: {ex}", file=sys.stderr)

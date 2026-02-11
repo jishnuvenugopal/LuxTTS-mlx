@@ -89,7 +89,22 @@ def process_audio(
     prompt_tokens = tokenizer.texts_to_token_ids([prompt_text])
     return prompt_tokens, prompt_features_lens, prompt_features, prompt_rms
 
-def generate(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, model, vocoder, tokenizer, num_step=4, guidance_scale=3.0, speed=1.0, t_shift=0.5, target_rms=0.1):
+def generate(
+    prompt_tokens,
+    prompt_features_lens,
+    prompt_features,
+    prompt_rms,
+    text,
+    model,
+    vocoder,
+    tokenizer,
+    num_step=4,
+    guidance_scale=3.0,
+    speed=1.0,
+    t_shift=0.5,
+    target_rms=0.1,
+    duration_pad_frames=10,
+):
     tokens = tokenizer.texts_to_token_ids([text])
     device = next(model.parameters()).device  # Auto-detect device
 
@@ -100,6 +115,7 @@ def generate(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, t
             prompt_features=prompt_features,
             prompt_features_lens=prompt_features_lens,
             speed=speed,
+            duration_pad_frames=duration_pad_frames,
             t_shift=t_shift,
             duration='predict',
             num_step=num_step,

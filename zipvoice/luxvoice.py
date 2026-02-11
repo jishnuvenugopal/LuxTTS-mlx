@@ -103,7 +103,17 @@ class LuxTTS:
 
         return encode_dict
 
-    def generate_speech(self, text, encode_dict, num_steps=4, guidance_scale=3.0, t_shift=0.5, speed=1.0, return_smooth=True):
+    def generate_speech(
+        self,
+        text,
+        encode_dict,
+        num_steps=4,
+        guidance_scale=3.0,
+        t_shift=0.5,
+        speed=1.0,
+        return_smooth=True,
+        duration_pad_frames=10,
+    ):
         """encodes text and generates speech using flow matching model according to steps, guidance scale, and t_shift(like temp)"""
 
         prompt_tokens, prompt_features_lens, prompt_features, prompt_rms = encode_dict.values()
@@ -115,10 +125,38 @@ class LuxTTS:
                 self.vocos.return_48k = True
 
         if self.device == 'mlx':
-            final_wav = self._generate_mlx(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
+            final_wav = self._generate_mlx(
+                prompt_tokens,
+                prompt_features_lens,
+                prompt_features,
+                prompt_rms,
+                text,
+                self.model,
+                self.vocos,
+                self.tokenizer,
+                num_step=num_steps,
+                guidance_scale=guidance_scale,
+                t_shift=t_shift,
+                speed=speed,
+                duration_pad_frames=duration_pad_frames,
+            )
         elif self.device == 'cpu':
             final_wav = generate_cpu(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
         else:
-            final_wav = generate(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, text, self.model, self.vocos, self.tokenizer, num_step=num_steps, guidance_scale=guidance_scale, t_shift=t_shift, speed=speed)
+            final_wav = generate(
+                prompt_tokens,
+                prompt_features_lens,
+                prompt_features,
+                prompt_rms,
+                text,
+                self.model,
+                self.vocos,
+                self.tokenizer,
+                num_step=num_steps,
+                guidance_scale=guidance_scale,
+                t_shift=t_shift,
+                speed=speed,
+                duration_pad_frames=duration_pad_frames,
+            )
 
         return final_wav if self.device == 'mlx' else final_wav.cpu()

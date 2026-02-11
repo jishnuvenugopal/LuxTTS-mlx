@@ -143,6 +143,7 @@ luxtts-mlx "Hello from MLX!" --out output.wav --device mlx
 ```
 
 Use `--no-return-smooth` if you want the sharper 48k path.
+Use `--duration-pad-frames 10` (default) or slightly higher values if last syllables sound clipped.
 
 #### CLI with prompt + optional prompt text
 ```
