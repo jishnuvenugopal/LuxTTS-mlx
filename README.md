@@ -134,6 +134,7 @@ if display is not None:
 ```
 ## Tips
 - Please use at minimum a 3 second audio file for voice cloning.
+- Best cloning quality comes from clean real speech (single speaker, no music/noise), typically 3-8 seconds.
 - `return_smooth=True` is the default and usually sounds clearer; use `False` for sharper 48k output.
 - Lower t_shift for less possible pronunciation errors but worse quality and vice versa.
 
@@ -145,6 +146,7 @@ luxtts-mlx "Hello from MLX!" --out output.wav --device mlx
 Use `--no-return-smooth` if you want the sharper 48k path.
 Defaults are tuned for clarity: `--num-steps 5`, `--speed 0.92`, `--duration-pad-frames 16`.
 Default output peak normalization is enabled: `--output-peak 0.92` (set `--output-peak 0` to disable).
+If output feels too loud on speakers/headphones, use `--output-peak 0.8`.
 
 #### CLI with prompt + optional prompt text
 ```
@@ -154,6 +156,7 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "
 
 Tip: providing `--prompt-text` skips Whisper prompt transcription load, which is faster and avoids extra multiprocessing warnings.
 For long/noisy prompt files, use `--prompt-start` and `--ref-duration` to target a clean segment.
+If prompt text is mis-transcribed or repeated, always pass explicit `--prompt-text`.
 
 #### Optional fallback: torch vocoder with MLX diffusion
 ```

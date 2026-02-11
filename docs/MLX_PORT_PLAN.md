@@ -17,7 +17,8 @@ From recent voice smoke tests:
 - Voice is now intelligible in English on MLX.
 - Some prompts still show startup noise or slight haze.
 - Some outputs end with robotic tails.
-- Cross-prompt consistency is not yet stable.
+- Cross-prompt consistency is still sensitive to reference quality.
+- Short/generated references can drift gender/timbre on long generations.
 
 ## 3) Plan To Reach "Pocket-TTS-MLX" Smoothness
 
