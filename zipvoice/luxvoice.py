@@ -40,7 +40,6 @@ class LuxTTS:
             self.tokenizer = tokenizer
             self.transcriber = transcriber
             self.device = device
-            self.vocos.freq_range = 12000
             self._generate_mlx = generate_mlx
             self._process_audio = process_audio_mlx
             return
@@ -76,8 +75,6 @@ class LuxTTS:
         self.transcriber = transcriber
         self.device = device
         self._process_audio = process_audio
-        if hasattr(self.vocos, "freq_range"):
-            self.vocos.freq_range = 12000
 
 
 
