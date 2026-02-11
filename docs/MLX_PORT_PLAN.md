@@ -61,3 +61,4 @@ From recent voice smoke tests:
 - `0.2.1`: stability patch (default torch vocoder on MLX CLI) + tail clarity tuning.
 - `0.3.0`: full-MLX default runtime (MLX vocoder + MLX prompt feature path) and torch-vocoder fallback as optional.
 - `0.3.1`: quality tuning patch (restored crossover merge via NumPy FFT, louder defaults, better cloning intelligibility).
+- `0.3.2`: prompt-window controls (`--prompt-start`, edge fade) for cleaner cloning from long/noisy references.

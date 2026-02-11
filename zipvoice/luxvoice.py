@@ -82,7 +82,15 @@ class LuxTTS:
 
 
 
-    def encode_prompt(self, prompt_audio=None, duration=5, rms=0.001, prompt_text=None):
+    def encode_prompt(
+        self,
+        prompt_audio=None,
+        duration=5,
+        rms=0.001,
+        prompt_text=None,
+        offset=0.0,
+        fade_ms=12.0,
+    ):
         """encodes audio prompt according to duration and rms(volume control)"""
         if self.device == "mlx" and prompt_audio is not None and not prompt_text and self.transcriber is None:
             self.transcriber = self._load_transcriber()
@@ -96,6 +104,8 @@ class LuxTTS:
             target_rms=rms,
             duration=duration,
             prompt_text=prompt_text,
+            offset=offset,
+            fade_ms=fade_ms,
         )
         if self.device == "mlx":
             encode_dict = {

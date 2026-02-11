@@ -148,6 +148,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Prompt duration in seconds (default: 5.0).",
     )
     parser.add_argument(
+        "--prompt-start",
+        type=float,
+        default=0.0,
+        help="Start offset in seconds for reading prompt audio (default: 0.0).",
+    )
+    parser.add_argument(
+        "--prompt-fade-ms",
+        type=float,
+        default=12.0,
+        help="Fade in/out applied to prompt audio edges in ms (default: 12.0).",
+    )
+    parser.add_argument(
         "--prompt-text",
         default=None,
         help="Override prompt transcription (skips Whisper).",
@@ -241,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         duration=args.ref_duration,
         rms=args.rms,
         prompt_text=prompt_text,
+        offset=args.prompt_start,
+        fade_ms=args.prompt_fade_ms,
     )
     try:
         wav = lux.generate_speech(

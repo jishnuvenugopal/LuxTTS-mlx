@@ -50,6 +50,19 @@ def _synth_prompt(duration: float, sample_rate: int) -> np.ndarray:
     return 0.01 * np.sin(2.0 * np.pi * 220.0 * t)
 
 
+def _apply_fade_np(wav: np.ndarray, sample_rate: int, fade_ms: float) -> np.ndarray:
+    fade_samples = max(0, int(sample_rate * max(fade_ms, 0.0) / 1000.0))
+    if fade_samples <= 1:
+        return wav
+    if wav.shape[-1] <= fade_samples * 2:
+        return wav
+    out = wav.astype(np.float32, copy=True)
+    ramp = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+    out[:fade_samples] *= ramp
+    out[-fade_samples:] *= ramp[::-1]
+    return out
+
+
 def process_audio(
     audio,
     transcriber,
@@ -60,6 +73,8 @@ def process_audio(
     duration=4,
     feat_scale=0.1,
     prompt_text: Optional[str] = None,
+    offset: float = 0.0,
+    fade_ms: float = 12.0,
 ):
     if audio is None:
         prompt_wav = _synth_prompt(duration, 24000)
@@ -70,11 +85,14 @@ def process_audio(
         if not prompt_text:
             prompt_text = "Hello."
     else:
-        prompt_wav, sr = librosa.load(audio, sr=24000, duration=duration)
+        prompt_wav, sr = librosa.load(audio, sr=24000, offset=max(offset, 0.0), duration=duration)
         if not prompt_text:
-            prompt_wav2, sr = librosa.load(audio, sr=16000, duration=duration)
+            prompt_wav2, sr = librosa.load(audio, sr=16000, offset=max(offset, 0.0), duration=duration)
             prompt_text = transcriber(prompt_wav2)["text"]
             print(prompt_text)
+
+    prompt_wav = _apply_fade_np(prompt_wav, 24000, fade_ms=fade_ms)
+    prompt_wav = prompt_wav - float(np.mean(prompt_wav))
 
     prompt_wav = torch.from_numpy(prompt_wav).unsqueeze(0)
     prompt_wav, prompt_rms = rms_norm(prompt_wav, target_rms)

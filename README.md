@@ -153,6 +153,7 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "
 ```
 
 Tip: providing `--prompt-text` skips Whisper prompt transcription load, which is faster and avoids extra multiprocessing warnings.
+For long/noisy prompt files, use `--prompt-start` and `--ref-duration` to target a clean segment.
 
 #### Optional fallback: torch vocoder with MLX diffusion
 ```

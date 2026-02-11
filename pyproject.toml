@@ -1,6 +1,6 @@
 [project]
 name = "LuxTTS-mlx"
-version = "0.3.1"
+version = "0.3.2"
 description = "LuxTTS MLX port for fast Apple Silicon inference."
 readme = "README.md"
 requires-python = ">=3.11"

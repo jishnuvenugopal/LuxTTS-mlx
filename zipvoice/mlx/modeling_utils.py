@@ -19,6 +19,19 @@ def _synth_prompt(duration: float, sample_rate: int) -> np.ndarray:
     t = np.linspace(0.0, duration, length, endpoint=False, dtype=np.float32)
     return 0.01 * np.sin(2.0 * np.pi * 220.0 * t)
 
+
+def _apply_fade_np(wav: np.ndarray, sample_rate: int, fade_ms: float) -> np.ndarray:
+    fade_samples = max(0, int(sample_rate * max(fade_ms, 0.0) / 1000.0))
+    if fade_samples <= 1:
+        return wav
+    if wav.shape[-1] <= fade_samples * 2:
+        return wav
+    out = wav.astype(np.float32, copy=True)
+    ramp = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+    out[:fade_samples] *= ramp
+    out[-fade_samples:] *= ramp[::-1]
+    return out
+
 from .model import ZipVoiceDistillMLX
 from .weights import apply_state_dict_mlx
 from .vocoder import load_vocoder_mlx
@@ -146,6 +159,8 @@ def process_audio_mlx(
     duration=4,
     feat_scale=0.1,
     prompt_text: Optional[str] = None,
+    offset: float = 0.0,
+    fade_ms: float = 12.0,
 ):
     if audio is None:
         prompt_wav = _synth_prompt(duration, 24000)
@@ -156,15 +171,19 @@ def process_audio_mlx(
         if not prompt_text:
             prompt_text = "Hello."
     else:
-        prompt_wav, _sr = librosa.load(audio, sr=24000, duration=duration)
+        prompt_wav, _sr = librosa.load(audio, sr=24000, offset=max(offset, 0.0), duration=duration)
         if not prompt_text:
-            prompt_wav2, _sr2 = librosa.load(audio, sr=16000, duration=duration)
+            prompt_wav2, _sr2 = librosa.load(audio, sr=16000, offset=max(offset, 0.0), duration=duration)
             if transcriber is None:
                 raise RuntimeError(
                     "Prompt transcription is unavailable. Pass --prompt-text or provide a transcriber."
                 )
             prompt_text = transcriber(prompt_wav2)["text"]
             print(prompt_text)
+
+    # Reduce click/noise at prompt boundaries and remove DC bias.
+    prompt_wav = _apply_fade_np(prompt_wav, 24000, fade_ms=fade_ms)
+    prompt_wav = prompt_wav - float(np.mean(prompt_wav))
 
     prompt_wav, prompt_rms = _rms_norm_np(prompt_wav, target_rms)
     prompt_features = _extract_vocos_fbank_np(prompt_wav, sampling_rate=24000)
