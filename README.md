@@ -17,6 +17,11 @@ LuxTTS is an lightweight zipvoice based text-to-speech model designed for high q
 
 https://github.com/user-attachments/assets/a3b57152-8d97-43ce-bd99-26dc9a145c29
 
+### Upstream sync status (2026-02-11)
+- Upstream LuxTTS commit synced: `34820963ee97f406619e5983771e572f779a600a` (2026-01-28).
+- Local MLX fork is `0` commits behind upstream on `master`.
+- Ongoing MLX quality and parity plan: `docs/MLX_PORT_PLAN.md`.
+
 
 ### The main features are
 - Voice cloning: SOTA voice cloning on par with models 10x larger.
