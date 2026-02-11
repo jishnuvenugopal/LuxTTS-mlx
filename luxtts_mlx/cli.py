@@ -136,8 +136,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--return-smooth",
-        action="store_true",
-        help="Return smoother 24k output (uses secondary head).",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Use smoother 24k output path (default: true). "
+            "Pass --no-return-smooth for the sharper 48k path."
+        ),
     )
     parser.add_argument(
         "--verbose",

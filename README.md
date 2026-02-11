@@ -110,7 +110,7 @@ rms = 0.01 ## higher makes it sound louder(0.01 or so recommended)
 t_shift = 0.9 ## sampling param, higher can sound better but worse WER
 num_steps = 4 ## sampling param, higher sounds better but takes longer(3-4 is best for efficiency)
 speed = 1.0 ## sampling param, controls speed of audio(lower=slower)
-return_smooth = False ## sampling param, makes it sound smoother possibly but less cleaner
+return_smooth = True ## sampling param, smoother/clearer default output path
 ref_duration = 5 ## Setting it lower can speedup inference, set to 1000 if you find artifacts.
 
 ## encode audio(takes 10s to init because of librosa first time)
@@ -129,13 +129,15 @@ if display is not None:
 ```
 ## Tips
 - Please use at minimum a 3 second audio file for voice cloning.
-- You can use return_smooth = True if you hear metallic sounds.
+- `return_smooth=True` is the default and usually sounds clearer; use `False` for sharper 48k output.
 - Lower t_shift for less possible pronunciation errors but worse quality and vice versa.
 
 #### CLI quick test (no prompt)
 ```
 luxtts-mlx "Hello from MLX!" --out output.wav --device mlx
 ```
+
+Use `--no-return-smooth` if you want the sharper 48k path.
 
 #### CLI with prompt + optional prompt text
 ```
