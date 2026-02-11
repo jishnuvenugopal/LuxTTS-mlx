@@ -57,7 +57,6 @@ From recent voice smoke tests:
 
 ## 4) Versioning Strategy
 
-- `0.2.0`: current milestone for MLX parity and CLI quality defaults.
-- `0.2.1`: targeted patch for remaining startup noise/tail artifacts.
+- `0.2.0`: milestone for MLX parity and CLI quality defaults.
+- `0.2.1`: stability patch (default torch vocoder on MLX CLI) + tail clarity tuning.
 - `0.3.0`: broader quality release after multi-voice stability is consistently good.
-

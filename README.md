@@ -69,9 +69,9 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda')
 # lux_tts = LuxTTS('YatharthS/LuxTTS', device='mlx')
 ```
 
-> Note: On MLX, both the diffusion model and vocoder run in MLX using the LuxTTS vocoder weights. `final_wav` is a `mlx.core.array`; convert with `np.array(final_wav)` before saving.
+> Note: On MLX, diffusion runs in MLX. The CLI defaults to the torch vocoder for stability; pass `--vocoder mlx` to force full-MLX vocoder.
 
-> Note: The MLX vocoder uses `vocos-mlx` and will download the LuxTTS vocoder weights on first run.
+> Note: The MLX vocoder path uses `vocos-mlx` and will download the LuxTTS vocoder weights on first run.
 
 > Important: English synthesis requires `piper_phonemize`.
 > Install with: `pip install "LuxTTS-mlx[phonemize]" -f https://k2-fsa.github.io/icefall/piper_phonemize.html`
@@ -153,7 +153,12 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "
 
 Tip: providing `--prompt-text` skips Whisper prompt transcription load, which is faster and avoids extra multiprocessing warnings.
 
-#### Debug: use torch vocoder with MLX diffusion
+#### Force full MLX vocoder path
+```
+luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder mlx
+```
+
+#### Stability fallback: torch vocoder with MLX diffusion
 ```
 luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder torch
 ```

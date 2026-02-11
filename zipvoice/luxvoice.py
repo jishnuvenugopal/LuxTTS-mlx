@@ -11,7 +11,7 @@ class LuxTTS:
         model_path='YatharthS/LuxTTS',
         device='cuda',
         threads=4,
-        vocoder_backend='mlx',
+        vocoder_backend='torch',
         vocoder_device=None,
     ):
         if model_path == 'YatharthS/LuxTTS':

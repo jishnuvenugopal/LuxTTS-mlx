@@ -66,9 +66,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--vocoder",
-        default="mlx",
+        default="torch",
         choices=["mlx", "torch"],
-        help="Vocoder backend when device=mlx (default: mlx).",
+        help="Vocoder backend when device=mlx (default: torch for stability).",
     )
     parser.add_argument(
         "--vocoder-device",
@@ -175,6 +175,11 @@ def main(argv: list[str] | None = None) -> int:
             "ignore",
             message="PySoundFile failed.*",
             module="librosa",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="An output with one or more elements was resized since it had shape \\[\\].*",
+            category=UserWarning,
         )
         logging.getLogger().setLevel(logging.ERROR)
         try:
