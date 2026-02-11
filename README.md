@@ -156,6 +156,8 @@ luxtts-mlx --text "Hello from MLX!" --prompt /path/to/prompt.wav --prompt-text "
 luxtts-mlx "Hello from MLX!" --prompt /path/to/prompt.wav --out output.wav --device mlx --vocoder torch
 ```
 
+If you hit a Metal kernel error such as `Unable to load function four_step_mem_8192...`, re-run with `--vocoder torch`.
+
   
 ## Info
 
