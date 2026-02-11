@@ -93,8 +93,6 @@ def generate(prompt_tokens, prompt_features_lens, prompt_features, prompt_rms, t
     tokens = tokenizer.texts_to_token_ids([text])
     device = next(model.parameters()).device  # Auto-detect device
 
-    speed = speed * 1.3
-
     with torch.inference_mode():
         (pred_features, _, _, _) = model.sample(
             tokens=tokens,

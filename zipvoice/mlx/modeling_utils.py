@@ -161,7 +161,7 @@ def generate_mlx(
         prompt_tokens=prompt_tokens,
         prompt_features=prompt_features,
         prompt_features_lens=prompt_features_lens,
-        speed=speed * 1.3,
+        speed=speed,
         t_shift=t_shift,
         duration="predict",
         num_step=num_step,

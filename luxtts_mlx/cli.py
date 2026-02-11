@@ -106,6 +106,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Speech speed factor (default: 1.0).",
     )
     parser.add_argument(
+        "--lead-silence-ms",
+        type=int,
+        default=120,
+        help="Silence to prepend in milliseconds (default: 120).",
+    )
+    parser.add_argument(
+        "--tail-silence-ms",
+        type=int,
+        default=180,
+        help="Silence to append in milliseconds (default: 180).",
+    )
+    parser.add_argument(
         "--rms",
         type=float,
         default=0.01,
@@ -216,7 +228,19 @@ def main(argv: list[str] | None = None) -> int:
     except RuntimeError as ex:
         print(f"Error: {ex}", file=sys.stderr)
         return 2
-    sf.write(out_path, np.array(wav).squeeze(), 48000)
+    wav_np = np.array(wav).squeeze()
+    if wav_np.ndim != 1:
+        wav_np = wav_np.reshape(-1)
+
+    sample_rate = 48000
+    lead_samples = max(0, int(args.lead_silence_ms * sample_rate / 1000))
+    tail_samples = max(0, int(args.tail_silence_ms * sample_rate / 1000))
+    if lead_samples > 0:
+        wav_np = np.concatenate([np.zeros(lead_samples, dtype=wav_np.dtype), wav_np])
+    if tail_samples > 0:
+        wav_np = np.concatenate([wav_np, np.zeros(tail_samples, dtype=wav_np.dtype)])
+
+    sf.write(out_path, wav_np, sample_rate)
     print(f"Wrote {out_path}")
     return 0
 
