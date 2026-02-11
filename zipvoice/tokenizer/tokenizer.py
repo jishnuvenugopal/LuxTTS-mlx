@@ -35,6 +35,14 @@ _PHONEMIZER_ERROR = None
 _PHONEMIZER_WARNED = False
 
 
+def _phonemizer_install_hint() -> str:
+    return (
+        "piper_phonemize is required for English phonemization. "
+        "Install with: pip install piper_phonemize -f "
+        "https://k2-fsa.github.io/icefall/piper_phonemize.html"
+    )
+
+
 def _suppress_optional_warnings() -> bool:
     return os.environ.get("LUXTTS_SUPPRESS_OPTIONAL_WARNINGS", "").lower() in {
         "1",
@@ -353,25 +361,21 @@ class EmiliaTokenizer(Tokenizer):
             return []
 
     def tokenize_EN(self, text: str) -> List[str]:
+        text = self.english_normalizer.normalize(text)
+        phonemizer, err = _get_phonemizer()
+        if err is not None or phonemizer is None:
+            global _PHONEMIZER_WARNED
+            if not _PHONEMIZER_WARNED and not _suppress_optional_warnings():
+                logging.warning(_phonemizer_install_hint())
+                _PHONEMIZER_WARNED = True
+            raise RuntimeError(_phonemizer_install_hint())
+
         try:
-            text = self.english_normalizer.normalize(text)
-            phonemizer, err = _get_phonemizer()
-            if err is not None or phonemizer is None:
-                global _PHONEMIZER_WARNED
-                if not _PHONEMIZER_WARNED and not _suppress_optional_warnings():
-                    logging.warning(
-                        "piper_phonemize is not installed; phonemization will be unavailable. "
-                        "Install with: pip install piper_phonemize -f "
-                        "https://k2-fsa.github.io/icefall/piper_phonemize.html"
-                    )
-                    _PHONEMIZER_WARNED = True
-                return []
             tokens = phonemizer(text, "en-us")
             tokens = reduce(lambda x, y: x + y, tokens)
             return tokens
         except Exception as ex:
-            logging.warning(f"Tokenization of English texts failed: {ex}")
-            return []
+            raise RuntimeError(f"Tokenization of English texts failed: {ex}") from ex
 
     def tokenize_pinyin(self, text: str) -> List[str]:
         try:

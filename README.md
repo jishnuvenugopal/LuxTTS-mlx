@@ -35,6 +35,11 @@ You can try it locally, colab, or spaces.
 pip install LuxTTS-mlx
 ```
 
+#### Recommended for English synthesis (includes phonemizer):
+```
+pip install "LuxTTS-mlx[phonemize]" -f https://k2-fsa.github.io/icefall/piper_phonemize.html
+```
+
 #### From source:
 ```
 git clone https://github.com/jishnuvenugopal/LuxTTS-mlx.git
@@ -63,8 +68,8 @@ lux_tts = LuxTTS('YatharthS/LuxTTS', device='cuda')
 
 > Note: The MLX vocoder uses `vocos-mlx` and will download the LuxTTS vocoder weights on first run.
 
-> Optional: For full phonemization support, install `piper_phonemize`:
-> `pip install piper_phonemize -f https://k2-fsa.github.io/icefall/piper_phonemize.html`
+> Important: English synthesis requires `piper_phonemize`.
+> Install with: `pip install "LuxTTS-mlx[phonemize]" -f https://k2-fsa.github.io/icefall/piper_phonemize.html`
 
 #### Simple inference
 ```python

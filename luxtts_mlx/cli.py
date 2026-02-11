@@ -1,11 +1,32 @@
 import argparse
 import logging
 import os
+import re
 import sys
 import warnings
 
 import numpy as np
 import soundfile as sf
+
+
+def _contains_english(text: str | None) -> bool:
+    if not text:
+        return False
+    return re.search(r"[A-Za-z]", text) is not None
+
+
+def _ensure_phonemizer_for_english(text: str, prompt_text: str | None) -> tuple[bool, str | None]:
+    if not (_contains_english(text) or _contains_english(prompt_text)):
+        return True, None
+    try:
+        from zipvoice.tokenizer.tokenizer import _get_phonemizer, _phonemizer_install_hint
+    except Exception as ex:
+        return False, f"Unable to check phonemizer dependency: {ex}"
+
+    phonemizer, err = _get_phonemizer()
+    if phonemizer is None or err is not None:
+        return False, _phonemizer_install_hint()
+    return True, None
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -162,6 +183,11 @@ def main(argv: list[str] | None = None) -> int:
     if prompt_path is None and not prompt_text:
         prompt_text = text
 
+    ok, err = _ensure_phonemizer_for_english(text, prompt_text)
+    if not ok:
+        print(f"Error: {err}", file=sys.stderr)
+        return 2
+
     lux = LuxTTS(
         args.model,
         device=args.device,
@@ -177,15 +203,19 @@ def main(argv: list[str] | None = None) -> int:
         rms=args.rms,
         prompt_text=prompt_text,
     )
-    wav = lux.generate_speech(
-        text,
-        encoded,
-        num_steps=args.num_steps,
-        guidance_scale=args.guidance_scale,
-        t_shift=args.t_shift,
-        speed=args.speed,
-        return_smooth=args.return_smooth,
-    )
+    try:
+        wav = lux.generate_speech(
+            text,
+            encoded,
+            num_steps=args.num_steps,
+            guidance_scale=args.guidance_scale,
+            t_shift=args.t_shift,
+            speed=args.speed,
+            return_smooth=args.return_smooth,
+        )
+    except RuntimeError as ex:
+        print(f"Error: {ex}", file=sys.stderr)
+        return 2
     sf.write(out_path, np.array(wav).squeeze(), 48000)
     print(f"Wrote {out_path}")
     return 0
