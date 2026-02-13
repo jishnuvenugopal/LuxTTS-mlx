@@ -4,6 +4,9 @@
 
 Initial stable package release of `LuxTTS-mlx`.
 
+- GitHub release: `https://github.com/jishnuvenugopal/LuxTTS-mlx/releases/tag/v0.1.0`
+- PyPI release: `https://pypi.org/project/LuxTTS-mlx/0.1.0/`
+
 - Ships `luxtts-mlx` CLI and Python API (`luxtts_mlx.LuxTTS`).
 - Supports MLX runtime on Apple Silicon with optional torch vocoder fallback.
 - Includes prompt preprocessing controls for improved stability:

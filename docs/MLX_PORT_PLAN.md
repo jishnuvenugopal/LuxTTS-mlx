@@ -1,12 +1,12 @@
 # LuxTTS-MLX Port Plan
 
-Updated: 2026-02-11
+Updated: 2026-02-13
 
 ## 1) Upstream Baseline
 
 - Upstream repo: `ysharma3501/LuxTTS`
 - Upstream head: `34820963ee97f406619e5983771e572f779a600a` (2026-01-28)
-- Sync state of this fork (`master`): `0` behind, `25` ahead
+- Sync state of this fork (`master`): `0` behind, `42` ahead
 
 Conclusion: there are no new upstream commits to merge right now. Current work should focus on MLX quality and parity polish.
 
@@ -60,8 +60,10 @@ From recent voice smoke tests:
 
 ## 4) Versioning Strategy
 
-- `0.2.0`: milestone for MLX parity and CLI quality defaults.
-- `0.2.1`: stability patch (default torch vocoder on MLX CLI) + tail clarity tuning.
-- `0.3.0`: full-MLX default runtime (MLX vocoder + MLX prompt feature path) and torch-vocoder fallback as optional.
-- `0.3.1`: quality tuning patch (restored crossover merge via NumPy FFT, louder defaults, better cloning intelligibility).
-- `0.3.2`: prompt-window controls (`--prompt-start`, edge fade) for cleaner cloning from long/noisy references.
+- `0.1.0`: initial stable public release on GitHub and PyPI (`LuxTTS-mlx`).
+- `0.1.1` (next): post-release quality pass focused on strict prompt-text path and long-text chunking/crossfade.
+- `0.2.0` (target milestone): stronger dual-stack quality gate coverage across MLX-only and Torch-only paths.
+
+Historical note:
+
+- Earlier internal iteration labels referenced `0.2.x` and `0.3.x` feature bundles before the public version reset to `0.1.0`.

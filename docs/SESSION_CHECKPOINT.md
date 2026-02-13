@@ -1,4 +1,4 @@
-# Session Checkpoint (2026-02-11)
+# Session Checkpoint (2026-02-11, addendum 2026-02-13)
 
 ## Mission
 
@@ -7,6 +7,35 @@ Stabilize LuxTTS quality and consistency with the least practical steps, while k
 - MLX stack and Torch stack independently viable.
 - Recursive feedback runs storage-safe.
 - A repeatable scenario matrix for regression checks.
+
+---
+
+## Release Addendum (2026-02-13)
+
+Shipping decisions executed:
+
+- Release posture: `Initial Stable`.
+- Version/tag: `v0.1.0`.
+- PyPI project: `LuxTTS-mlx`.
+- Release order used: GitHub release first, then PyPI publish.
+
+Release outcomes:
+
+- GitHub release published:
+  - `https://github.com/jishnuvenugopal/LuxTTS-mlx/releases/tag/v0.1.0`
+- PyPI publish completed:
+  - `https://pypi.org/project/LuxTTS-mlx/0.1.0/`
+
+Packaging note applied for PyPI compatibility:
+
+- Removed direct VCS dependency from `Requires-Dist` metadata.
+- Added explicit install guidance for LinaCodec:
+  - `pip install git+https://github.com/ysharma3501/LinaCodec.git`
+
+Deferred by decision (post-release):
+
+- Immediate quality pass work (strict prompt-text enforcement + long-text chunking/crossfade).
+- Core upstream README alternative-implementation mention (to be done after this release flow).
 
 ---
 
@@ -278,4 +307,3 @@ If starting a fresh thread, begin with:
    - `/Users/jv/Downloads/LuxTTS-mlx-test/scenario-matrix-v1/SUMMARY.md`
    - `/Users/jv/Downloads/LuxTTS-mlx-test/scenario-matrix-v1/report.json`
 3. Continue with the minimum-step plan above (strict prompt text + chunked generation + dual-stack gate).
-
