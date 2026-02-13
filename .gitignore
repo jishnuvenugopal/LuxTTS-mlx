@@ -193,3 +193,10 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Local synthesis artifacts
+*.wav
+scenario-matrix-*/
+voice-feedback-loop-*/
+smoke_matrix_*/
+voice-matrix-*/

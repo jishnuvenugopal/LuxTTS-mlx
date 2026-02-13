@@ -1,6 +1,6 @@
 [project]
 name = "LuxTTS-mlx"
-version = "0.3.2"
+version = "0.1.0"
 description = "LuxTTS MLX port for fast Apple Silicon inference."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,3 +53,4 @@ linacodec = { git = "https://github.com/ysharma3501/LinaCodec.git" }
 
 [tool.uv.build-backend]
 module-root = "" # The root module of the project
+module-name = ["luxtts_mlx", "zipvoice"]

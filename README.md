@@ -22,6 +22,10 @@ https://github.com/user-attachments/assets/a3b57152-8d97-43ce-bd99-26dc9a145c29
 - Local MLX fork is `0` commits behind upstream on `master`.
 - Ongoing MLX quality and parity plan: `docs/MLX_PORT_PLAN.md`.
 
+### Release status
+- Initial stable package release: `v0.1.0` (2026-02-13).
+- Release notes: `CHANGELOG.md`.
+
 
 ### The main features are
 - Voice cloning: SOTA voice cloning on par with models 10x larger.
