@@ -278,13 +278,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {err}", file=sys.stderr)
         return 2
 
-    lux = LuxTTS(
-        args.model,
-        device=args.device,
-        threads=args.threads,
-        vocoder_backend=args.vocoder,
-        vocoder_device=args.vocoder_device,
-    )
+    try:
+        lux = LuxTTS(
+            args.model,
+            device=args.device,
+            threads=args.threads,
+            vocoder_backend=args.vocoder,
+            vocoder_device=args.vocoder_device,
+        )
+    except ImportError as ex:
+        print(f"Error: {ex}", file=sys.stderr)
+        return 2
     if prompt_path is None:
         print("No prompt audio provided; using a synthetic prompt for a quick smoke test.")
     encoded = lux.encode_prompt(

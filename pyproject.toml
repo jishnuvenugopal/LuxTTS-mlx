@@ -11,7 +11,6 @@ dependencies = [
   "jieba",
   "lhotse",
   "librosa",
-  "linacodec @ git+https://github.com/ysharma3501/LinaCodec.git",
   "mlx",
   "numpy",
   "onnxruntime",
@@ -47,9 +46,6 @@ line-length = 120
 
 [tool.uv]
 find-links = ["https://k2-fsa.github.io/icefall/piper_phonemize.html"]
-
-[tool.uv.sources]
-linacodec = { git = "https://github.com/ysharma3501/LinaCodec.git" }
 
 [tool.uv.build-backend]
 module-root = "" # The root module of the project

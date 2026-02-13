@@ -2,6 +2,13 @@ import os
 import numpy as np
 import torch
 
+
+LINACODEC_INSTALL_HINT = (
+    "Missing required dependency 'linacodec'. Install it with: "
+    "pip install git+https://github.com/ysharma3501/LinaCodec.git"
+)
+
+
 class LuxTTS:
     """
     LuxTTS class for encoding prompt and generating speech on cpu/cuda/mps.
@@ -27,6 +34,10 @@ class LuxTTS:
                     load_transcriber_mlx,
                     process_audio_mlx,
                 )
+            except ModuleNotFoundError as ex:
+                if ex.name and ex.name.startswith("linacodec"):
+                    raise ImportError(LINACODEC_INSTALL_HINT) from ex
+                raise ImportError("MLX backend not available. Install mlx and dependencies.") from ex
             except Exception as ex:
                 raise ImportError("MLX backend not available. Install mlx and dependencies.") from ex
             model, feature_extractor, vocos, tokenizer, transcriber = load_models_mlx(
@@ -48,12 +59,17 @@ class LuxTTS:
             self._load_transcriber = load_transcriber_mlx
             return
 
-        from zipvoice.modeling_utils import (
-            process_audio,
-            generate,
-            load_models_gpu,
-            load_models_cpu,
-        )
+        try:
+            from zipvoice.modeling_utils import (
+                process_audio,
+                generate,
+                load_models_gpu,
+                load_models_cpu,
+            )
+        except ModuleNotFoundError as ex:
+            if ex.name and ex.name.startswith("linacodec"):
+                raise ImportError(LINACODEC_INSTALL_HINT) from ex
+            raise
 
         # Auto-detect better device if cuda is requested but not available
         if device == 'cuda' and not torch.cuda.is_available():

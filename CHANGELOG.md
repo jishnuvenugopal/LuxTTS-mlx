@@ -15,6 +15,8 @@ Initial stable package release of `LuxTTS-mlx`.
   - `tools/feedback_loop.py`
   - `tools/scenario_matrix.py`
 - Documents current known quality sensitivities and recommended smoke checks.
+- PyPI-compatible packaging metadata (no direct VCS dependency in `Requires-Dist`);
+  install LinaCodec separately via git.
 
 Known limitations for this initial stable:
 

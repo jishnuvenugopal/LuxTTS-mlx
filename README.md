@@ -44,6 +44,11 @@ You can try it locally, colab, or spaces.
 pip install LuxTTS-mlx
 ```
 
+#### Required vocoder dependency (LinaCodec):
+```
+pip install git+https://github.com/ysharma3501/LinaCodec.git
+```
+
 #### Recommended for English synthesis (includes phonemizer):
 ```
 pip install "LuxTTS-mlx[phonemize]" -f https://k2-fsa.github.io/icefall/piper_phonemize.html
